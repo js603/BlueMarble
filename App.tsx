@@ -8,7 +8,7 @@ import { Dice } from './components/Dice';
 import { Chat } from './components/Chat';
 import { PlayerAvatar } from './components/PlayerAvatar';
 import { BuildingIcon } from './components/BuildingIcon';
-import { initP2PRoom, broadcastState, onP2PMessage, onPeerJoin, leaveP2PRoom, broadcastChat, sendGenericMessage } from './services/p2pService';
+import { initP2PRoom, broadcastState, onP2PMessage, onPeerJoin, leaveP2PRoom, broadcastChat, sendGenericMessage, getPeers } from './services/p2pService';
 import { initAudio, startBGM, stopBGM, toggleMute as toggleAudioMute } from './services/audioService';
 
 // Updated Helper to create dynamic players
@@ -185,6 +185,12 @@ export default function App() {
         addChatMessage('SYSTEM', 'System', '방이 생성되었습니다. 다른 플레이어를 기다리는 중...');
 
         // Listen for joins
+        // Listen for joins
+        onPeerJoin((peerId) => {
+          console.log('[Host] New peer connected:', peerId);
+          addChatMessage('SYSTEM', 'System', `새로운 접속자 감지됨... (${peerId.substring(0, 4)})`);
+        });
+
         onP2PMessage((msg: P2PMessage) => {
           if (msg.type === 'JOIN_REQ') {
             const guestProfile = msg.payload as UserProfile;
@@ -1244,8 +1250,8 @@ export default function App() {
               <div
                 key={p.id}
                 className={`flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border shadow-sm transition-all min-w-fit ${isActive
-                    ? 'bg-slate-800/90 border-emerald-500/50 ring-1 ring-emerald-500/30'
-                    : 'bg-slate-900/60 border-slate-700/50 opacity-80'
+                  ? 'bg-slate-800/90 border-emerald-500/50 ring-1 ring-emerald-500/30'
+                  : 'bg-slate-900/60 border-slate-700/50 opacity-80'
                   } ${p.isBankrupt ? 'grayscale opacity-50' : ''}`}
               >
                 <div className="w-6 h-6 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center overflow-hidden">
@@ -1336,8 +1342,8 @@ export default function App() {
                             (gameState.isMultiplayer && gameState.players[gameState.currentPlayerIndex].id !== gameState.myPlayerId)
                           }
                           className={`w-full py-3 sm:py-4 rounded-xl font-black text-sm sm:text-lg shadow-lg transition-all transform hover:-translate-y-0.5 active:scale-95 ${(gameState.players[gameState.currentPlayerIndex].isComputer || gameState.isMoving || (gameState.isMultiplayer && gameState.players[gameState.currentPlayerIndex].id !== gameState.myPlayerId))
-                              ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700'
-                              : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-emerald-500/20'
+                            ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700'
+                            : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-emerald-500/20'
                             }`}
                         >
                           {gameState.isMultiplayer && gameState.players[gameState.currentPlayerIndex].id !== gameState.myPlayerId
@@ -1351,8 +1357,8 @@ export default function App() {
                           onClick={nextTurn}
                           disabled={gameState.isMultiplayer && gameState.players[gameState.currentPlayerIndex].id !== gameState.myPlayerId}
                           className={`w-full py-3 sm:py-4 font-bold rounded-xl animate-pulse shadow-lg text-sm sm:text-lg ${gameState.isMultiplayer && gameState.players[gameState.currentPlayerIndex].id !== gameState.myPlayerId
-                              ? 'bg-slate-800 text-slate-500'
-                              : 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20'
+                            ? 'bg-slate-800 text-slate-500'
+                            : 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20'
                             }`}
                         >
                           END TURN

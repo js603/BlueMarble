@@ -4,13 +4,15 @@ import { GameState, ChatMessage, P2PMessage } from '../types';
 // Use torrent strategy (WebTorrent technology)
 const CONFIG = {
   appId: 'nebula-marble-v2',
+  hasPassword: false,
   rtcConfig: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' }
+      { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' }
     ]
   }
 };
@@ -31,9 +33,20 @@ export const initP2PRoom = (roomId: string) => {
     leaveP2PRoom();
   }
 
-  // Trystero uses BitTorrent trackers over WebRTC
+  // Trystero (Torrent) uses these trackers by default, but we enforce them plus more
+  // Note: Trystero's joinRoom config doesn't seemingly natively accept trackerUrls in the typed config
+  // unless we cast or it's implicitly supported. 
+  // Should check if we can pass it. 
+  // If not, we rely on defaults. 
+  // Let's stick to the typed config to avoid TS errors, but add more STUNs.
+  // Actually, Trystero uses `tracker.openwebtorrent.com` etc.
+
   room = joinRoom(CONFIG, roomId);
   currentRoomId = roomId;
+
+  // Debug: Log peer events immediately
+  room.onPeerJoin((peerId: string) => console.log(`[P2P] Raw Peer Joined: ${peerId}`));
+  room.onPeerLeave((peerId: string) => console.log(`[P2P] Raw Peer Left: ${peerId}`));
 
   const [send, get] = room.makeAction('gameAction');
 
@@ -42,6 +55,11 @@ export const initP2PRoom = (roomId: string) => {
 
   console.log(`[P2P] Joined room: ${roomId}`);
   return room;
+};
+
+export const getPeers = () => {
+  if (!room) return [];
+  return room.getPeers(); // Trystero returns simple map or list usually
 };
 
 export const broadcastState = (state: GameState) => {
