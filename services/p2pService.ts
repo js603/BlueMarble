@@ -8,13 +8,24 @@ let room: any = null;
 let sendAction: any = null;
 let onActionReceive: any = null;
 
+let currentRoomId: string | null = null;
+
 export const initP2PRoom = (roomId: string) => {
-  if (room) return;
+  if (room) {
+    if (currentRoomId === roomId) {
+      console.log(`[P2P] Already in room: ${roomId}`);
+      return room;
+    }
+    console.log(`[P2P] Switching room from ${currentRoomId} to ${roomId}`);
+    leaveP2PRoom();
+  }
 
   // Trystero uses BitTorrent trackers over WebRTC
   room = joinRoom(CONFIG, roomId);
+  currentRoomId = roomId;
+
   const [send, get] = room.makeAction('gameAction');
-  
+
   sendAction = send;
   onActionReceive = get;
 
@@ -46,9 +57,9 @@ export const broadcastChat = (message: ChatMessage) => {
 
 // New Generic Sender
 export const sendGenericMessage = (msg: P2PMessage) => {
-    if (sendAction) {
-        sendAction(msg);
-    }
+  if (sendAction) {
+    sendAction(msg);
+  }
 }
 
 export const onP2PMessage = (callback: (msg: P2PMessage) => void) => {
@@ -67,9 +78,15 @@ export const onPeerJoin = (callback: (peerId: string) => void) => {
 
 export const leaveP2PRoom = () => {
   if (room) {
-    room.leave();
+    try {
+      room.leave();
+    } catch (e) {
+      console.error('[P2P] Error leaving room:', e);
+    }
     room = null;
     sendAction = null;
     onActionReceive = null;
+    currentRoomId = null;
+    console.log('[P2P] Left room');
   }
 };
