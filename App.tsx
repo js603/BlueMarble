@@ -17,6 +17,7 @@ import {
   getGamePeers,
   joinLobby,
   leaveLobby,
+  sendGameMessage,
 } from './services/p2pService';
 import { initAudio, startBGM, stopBGM, toggleMute as toggleAudioMute } from './services/audioService';
 
@@ -273,13 +274,11 @@ export default function App() {
 
       // Send nickname to host
       setTimeout(() => {
-        if (roomRef.current) {
-          const actions = roomRef.current[1];
-          actions.send({
-            type: 'GUEST_NICKNAME',
-            payload: userProfile.name
-          } as P2PMessage);
-        }
+        sendGameMessage({
+          type: 'GUEST_NICKNAME',
+          payload: userProfile.name
+        });
+        console.log('[Guest] Sent nickname to host:', userProfile.name);
       }, 500);
     }
 
@@ -298,6 +297,7 @@ export default function App() {
     console.log('=== GAME START DEBUG ===');
     console.log('[handleGameStart] Current room:', currentRoom);
     console.log('[handleGameStart] connectedPeers state:', connectedPeers);
+    console.log('[handleGameStart] peerNicknames state:', peerNicknames); // 닉네임 상태 확인
 
     // 실제 접속된 Peer 수 계산
     const peersFromService = getGamePeers();
@@ -998,24 +998,32 @@ export default function App() {
                   <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center bg-slate-800 overflow-hidden" style={{ borderColor: userProfile?.color }}>
                     <PlayerAvatar playerId={1} color={userProfile?.color || '#fff'} isActive={false} avatarId={userProfile?.avatarId || 0} />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <div className="font-bold text-lg">{userProfile?.name}</div>
-                    <div className="text-xs text-emerald-400 font-mono">HOST (나)</div>
+                    <div className="text-xs text-emerald-400 font-mono flex items-center gap-2">
+                      <span className="bg-emerald-500/20 px-2 py-0.5 rounded">🎖️ HOST</span>
+                      <span>(나)</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Connected Peers */}
-                {connectedPeers.map((peerId, idx) => (
-                  <div key={peerId} className="flex items-center gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
-                    <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center bg-slate-800 overflow-hidden" style={{ borderColor: PLAYER_COLORS[(idx + 1) % 5] }}>
-                      <PlayerAvatar playerId={idx + 2} color={PLAYER_COLORS[(idx + 1) % 5]} isActive={false} avatarId={(idx + 1) % 5} />
+                {/* Connected Peers (Guests) */}
+                {connectedPeers.map((peerId, idx) => {
+                  const guestNickname = peerNicknames[peerId] || `플레이어 ${idx + 2}`;
+                  return (
+                    <div key={peerId} className="flex items-center gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
+                      <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center bg-slate-800 overflow-hidden" style={{ borderColor: PLAYER_COLORS[(idx + 1) % 5] }}>
+                        <PlayerAvatar playerId={idx + 2} color={PLAYER_COLORS[(idx + 1) % 5]} isActive={false} avatarId={(idx + 1) % 5} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-bold text-lg">{guestNickname}</div>
+                        <div className="text-xs text-cyan-400 font-mono">
+                          <span className="bg-cyan-500/20 px-2 py-0.5 rounded">GUEST</span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-bold text-lg">플레이어 {idx + 2}</div>
-                      <div className="text-xs text-cyan-400 font-mono">CONNECTED</div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
