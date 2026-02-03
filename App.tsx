@@ -1229,21 +1229,28 @@ export default function App() {
               {!gameState.waitingForNextTurn && !gameState.modal && !gameState.players[gameState.currentPlayerIndex]?.isComputer && !gameState.pendingArrivalId && gameState.outstandingDebt === 0 && !gameState.isSelectingMoveTarget && (
                 <button
                   onClick={handleRollDice}
-                  disabled={gameState.isRolling || gameState.isMoving}
+                  disabled={gameState.isRolling || gameState.isMoving || gameState.players[gameState.currentPlayerIndex]?.id !== gameState.myPlayerId}
                   className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-black text-xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className="text-2xl">🎲</span>
-                  {gameState.consecutiveDoubles > 0 ? 'DOUBLE ROLL!' : 'ROLL DICE'}
+                  {gameState.players[gameState.currentPlayerIndex]?.id !== gameState.myPlayerId
+                    ? `${gameState.players[gameState.currentPlayerIndex]?.name}의 차례`
+                    : gameState.consecutiveDoubles > 0 ? 'DOUBLE ROLL!' : 'ROLL DICE'
+                  }
                 </button>
               )}
 
               {gameState.waitingForNextTurn && !gameState.players[gameState.currentPlayerIndex]?.isComputer && !gameState.pendingArrivalId && gameState.outstandingDebt === 0 && (
                 <button
                   onClick={nextTurn}
-                  className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                  disabled={gameState.players[gameState.currentPlayerIndex]?.id !== gameState.myPlayerId}
+                  className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className="text-2xl">⏭️</span>
-                  TURN END
+                  {gameState.players[gameState.currentPlayerIndex]?.id !== gameState.myPlayerId
+                    ? `${gameState.players[gameState.currentPlayerIndex]?.name}의 차례`
+                    : 'TURN END'
+                  }
                 </button>
               )}
 
