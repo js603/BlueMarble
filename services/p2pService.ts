@@ -4,12 +4,11 @@ import { GameState, ChatMessage, P2PMessage, RoomInfo } from '../types';
 const CONFIG = {
   appId: 'nebula-marble-v2-global', // Unique App ID for Nostr
   relayUrls: [
-    'wss://relay.damus.io',
     'wss://nos.lol',
     'wss://relay.snort.social',
-    'wss://nostr.wine',
-    'wss://relay.nostr.band',
-    'wss://relay.nostr.info'
+    'wss://relay.nostr.wirednet.jp',
+    'wss://nostr.fmt.wiz.biz',
+    'wss://relay.orangepill.dev'
   ],
   rtcConfig: {
     iceServers: [
@@ -150,7 +149,9 @@ export const sendGameMessage = (msg: P2PMessage) => {
   }
 };
 
+
 export const getGamePeers = () => {
   if (!gameRoom) return [];
-  return gameRoom.getPeers();
+  const peers = gameRoom.getPeers();
+  return Object.keys(peers); // Convert object to array of peer IDs
 };

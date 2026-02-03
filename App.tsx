@@ -15,6 +15,8 @@ import {
   broadcastGameChat,
   advertiseRoom,
   getGamePeers,
+  joinLobby,
+  leaveLobby,
 } from './services/p2pService';
 import { initAudio, startBGM, stopBGM, toggleMute as toggleAudioMute } from './services/audioService';
 
@@ -89,6 +91,9 @@ export default function App() {
   const [isHost, setIsHost] = useState(false);
   const [currentRoom, setCurrentRoom] = useState<RoomInfo | null>(null);
   const [fillAI, setFillAI] = useState(true);
+  const [rooms, setRooms] = useState<RoomInfo[]>([]); // 로비 방 목록
+  const [connectedPeers, setConnectedPeers] = useState<string[]>([]); // 연결된 Peer ID 목록
+  const [peerNicknames, setPeerNicknames] = useState<Record<string, string>>({}); // peerId -> nickname 매핑
 
   const gameStateRef = useRef(gameState);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
@@ -147,6 +152,41 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isHost, currentRoom, gameState.gameStatus]);
 
+  // --- Global Lobby Connection (Always Connected) ---
+  useEffect(() => {
+    if (showIntro) return; // Wait until intro is complete
+
+    console.log('[App] Connecting to global lobby...');
+    joinLobby((info: RoomInfo) => {
+      console.log(`[App] Received room ad: ${info.name}`);
+      // 방 목록 업데이트
+      setRooms(prev => {
+        const existingIdx = prev.findIndex(r => r.id === info.id);
+        if (existingIdx !== -1) {
+          const newRooms = [...prev];
+          newRooms[existingIdx] = { ...info, lastUpdated: Date.now() };
+          return newRooms;
+        } else {
+          return [...prev, { ...info, lastUpdated: Date.now() }];
+        }
+      });
+    });
+
+    return () => {
+      console.log('[App] Disconnecting from lobby...');
+      leaveLobby();
+    };
+  }, [showIntro]);
+
+  // Clean up old rooms
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setRooms(prev => prev.filter(r => now - r.lastUpdated < 5000));
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
   // --- Chat ---
   const addChatMessage = useCallback((senderId: number | 'SYSTEM' | 'AI', senderName: string, text: string, avatarId?: number) => {
     const newMsg: ChatMessage = {
@@ -182,24 +222,66 @@ export default function App() {
       setCurrentRoom(initialInfo);
     }
 
-    joinGameRoom(roomId, (msg: P2PMessage, peerId: string) => {
+    const room = joinGameRoom(roomId, (msg: P2PMessage, peerId: string) => {
       if (msg.type === 'STATE_SYNC') {
         const remoteState = msg.payload as GameState;
-        setGameStateInternal(prev => ({
-          ...remoteState,
-          myPlayerId: prev.myPlayerId
-        }));
+        console.log('[P2P] Received STATE_SYNC from host');
+
+        // Guest: Replace player 2's name with my actual nickname
+        if (!isHostMode && userProfile) {
+          const updatedPlayers = remoteState.players.map(p =>
+            p.id === 2 ? { ...p, name: userProfile.name } : p
+          );
+          setGameStateInternal(prev => ({
+            ...remoteState,
+            players: updatedPlayers,
+            myPlayerId: prev.myPlayerId || 2
+          }));
+        } else {
+          setGameStateInternal(prev => ({
+            ...remoteState,
+            myPlayerId: prev.myPlayerId || (isHostMode ? 1 : 2)
+          }));
+        }
       } else if (msg.type === 'CHAT') {
         setChatMessages(prev => [...prev, msg.payload as ChatMessage]);
+      } else if (msg.type === 'GUEST_NICKNAME' && isHostMode) {
+        // Host: Store guest nickname
+        console.log('[Host] Received guest nickname:', msg.payload, 'from', peerId);
+        setPeerNicknames(prev => ({
+          ...prev,
+          [peerId]: msg.payload
+        }));
       }
     }, (peerId) => {
       console.log('Peer joined:', peerId);
+      setConnectedPeers(prev => [...prev, peerId]);
     }, (peerId) => {
       console.log('Peer left:', peerId);
-    }).then(room => {
-      roomRef.current = room;
-      // Host: 대기실에서 시작 버튼을 눌러 시작하도록 대기
+      setConnectedPeers(prev => prev.filter(id => id !== peerId));
     });
+
+    roomRef.current = room;
+    // Host: 대기실에서 시작 버튼을 눌러 시작하도록 대기
+
+    // Guest: Set myPlayerId and send nickname to host
+    if (!isHostMode && userProfile) {
+      setGameState(prev => ({
+        ...prev,
+        myPlayerId: 2
+      }));
+
+      // Send nickname to host
+      setTimeout(() => {
+        if (roomRef.current) {
+          const actions = roomRef.current[1];
+          actions.send({
+            type: 'GUEST_NICKNAME',
+            payload: userProfile.name
+          } as P2PMessage);
+        }
+      }, 500);
+    }
 
     if (isHostMode && userProfile) {
       // Host ready logic
@@ -208,12 +290,21 @@ export default function App() {
 
   // Triggered by Lobby "Start Game" (Ref adapted)
   const handleGameStart = () => {
-    if (!currentRoom) return;
+    if (!currentRoom || !isHost) {
+      console.error('[handleGameStart] Cannot start:', { currentRoom, isHost });
+      return;
+    }
+
+    console.log('=== GAME START DEBUG ===');
+    console.log('[handleGameStart] Current room:', currentRoom);
+    console.log('[handleGameStart] connectedPeers state:', connectedPeers);
 
     // 실제 접속된 Peer 수 계산
-    const connectedPeers = getGamePeers();
-    const connectedPlayerCount = 1 + connectedPeers.length; // Host + 연결된 Peer들
+    const peersFromService = getGamePeers();
+    console.log('[handleGameStart] getGamePeers():', peersFromService);
+    console.log('[handleGameStart] Total connected:', connectedPeers.length, 'peers');
     const maxPlayers = currentRoom.maxPlayers;
+    const connectedPlayerCount = 1 + connectedPeers.length; // Host + Peers
 
     let targetTotal = connectedPlayerCount;
 
@@ -225,17 +316,77 @@ export default function App() {
       targetTotal = Math.max(2, connectedPlayerCount);
     }
 
-    const players = createPlayers(targetTotal, userProfile, true); // true = PVE/Mixed Mode
+    // Create players manually - DO NOT use createPlayers as it makes everyone AI
+    const players: Player[] = [];
+    const aiNames = ['알파고', '왓슨', '자비스', '스카이넷', 'HAL9000'];
+    const realPlayerCount = 1 + connectedPeers.length;
 
-    // Assign IDs to connected peers if PVP logic was fully implemented, 
-    // but here we follow Reference logic mostly.
+    // 1. Host player (me) - REAL PLAYER
+    players.push({
+      id: 1,
+      name: userProfile ? userProfile.name : '나',
+      money: INITIAL_MONEY,
+      position: 0,
+      color: userProfile ? userProfile.color : PLAYER_COLORS[0],
+      avatarId: userProfile ? userProfile.avatarId : 0,
+      isBankrupt: false,
+      isTrapped: 0,
+      isComputer: false, // HOST = REAL PLAYER
+      hasEscapeCard: false
+    });
 
-    setGameState(prev => ({
-      ...prev,
+    // 2. Connected peers - REAL PLAYERS
+    for (let i = 0; i < connectedPeers.length; i++) {
+      const peerId = connectedPeers[i];
+      const guestNickname = peerNicknames[peerId] || `플레이어 ${i + 2}`;
+
+      players.push({
+        id: i + 2,
+        name: guestNickname,
+        money: INITIAL_MONEY,
+        position: 0,
+        color: PLAYER_COLORS[(i + 1) % 5],
+        avatarId: (i + 1) % 5,
+        isBankrupt: false,
+        isTrapped: 0,
+        isComputer: false, // GUEST = REAL PLAYER
+        hasEscapeCard: false
+      });
+    }
+
+    // 3. Fill remaining slots with AI
+    while (players.length < targetTotal) {
+      const i = players.length;
+      players.push({
+        id: i + 1,
+        name: aiNames[(i - realPlayerCount) % aiNames.length],
+        money: INITIAL_MONEY,
+        position: 0,
+        color: PLAYER_COLORS[i % 5],
+        avatarId: i % 5,
+        isBankrupt: false,
+        isTrapped: 0,
+        isComputer: true, // AI PLAYER
+        hasEscapeCard: false
+      });
+    }
+
+    console.log('[Host] Created players:', players.map(p => ({ id: p.id, name: p.name, isComputer: p.isComputer })));
+
+    const newState = {
+      ...gameState,
       players,
-      gameStatus: 'PLAYING',
+      gameStatus: 'PLAYING' as const,
       myPlayerId: 1 // Host is always 1 in this simple logic
-    }));
+    };
+
+    setGameState(newState);
+
+    // Broadcast to all connected peers
+    setTimeout(() => {
+      broadcastGameState(newState);
+      console.log('[Host] Broadcasted game start to all peers');
+    }, 100);
   };
 
   // --- CORE GAME LOGIC (PORTED FROM REFERENCE) ---
@@ -829,7 +980,7 @@ export default function App() {
       <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 via-transparent to-slate-950/80 pointer-events-none z-0"></div>
 
       {showIntro && <IntroModal onComplete={handleProfileComplete} />}
-      {showLobby && userProfile && <Lobby userProfile={userProfile} onJoinRoom={handleJoinOrCreateRoom} />}
+      {showLobby && userProfile && <Lobby userProfile={userProfile} onJoinRoom={handleJoinOrCreateRoom} rooms={rooms} />}
 
       {gameState.modal && <ActionModal modal={gameState.modal} onAction={handleModalActionWithLogic} />}
 
@@ -839,16 +990,32 @@ export default function App() {
           <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl max-w-md w-full border border-slate-700">
             <h2 className="text-3xl font-bold mb-6 text-center text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">게임 대기실</h2>
 
-            <div className="mb-8">
-              <h3 className="text-slate-400 text-sm font-bold uppercase tracking-wider mb-3">내 프로필</h3>
-              <div className="flex items-center gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
-                <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center bg-slate-800 overflow-hidden" style={{ borderColor: userProfile?.color }}>
-                  <PlayerAvatar playerId={1} color={userProfile?.color || '#fff'} isActive={false} avatarId={userProfile?.avatarId || 0} />
+            <div className="mb-6">
+              <h3 className="text-slate-400 text-sm font-bold uppercase tracking-wider mb-3">접속한 플레이어</h3>
+              <div className="space-y-2">
+                {/* Host (나) */}
+                <div className="flex items-center gap-4 bg-slate-900/50 p-4 rounded-xl border border-emerald-500/30">
+                  <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center bg-slate-800 overflow-hidden" style={{ borderColor: userProfile?.color }}>
+                    <PlayerAvatar playerId={1} color={userProfile?.color || '#fff'} isActive={false} avatarId={userProfile?.avatarId || 0} />
+                  </div>
+                  <div>
+                    <div className="font-bold text-lg">{userProfile?.name}</div>
+                    <div className="text-xs text-emerald-400 font-mono">HOST (나)</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-bold text-lg">{userProfile?.name}</div>
-                  <div className="text-xs text-emerald-400 font-mono">READY</div>
-                </div>
+
+                {/* Connected Peers */}
+                {connectedPeers.map((peerId, idx) => (
+                  <div key={peerId} className="flex items-center gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
+                    <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center bg-slate-800 overflow-hidden" style={{ borderColor: PLAYER_COLORS[(idx + 1) % 5] }}>
+                      <PlayerAvatar playerId={idx + 2} color={PLAYER_COLORS[(idx + 1) % 5]} isActive={false} avatarId={(idx + 1) % 5} />
+                    </div>
+                    <div>
+                      <div className="font-bold text-lg">플레이어 {idx + 2}</div>
+                      <div className="text-xs text-cyan-400 font-mono">CONNECTED</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -857,10 +1024,10 @@ export default function App() {
                 <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
                   <div className="flex justify-between text-slate-300 text-sm mb-2">
                     <span>현재 접속 인원</span>
-                    <span className="font-bold text-white">1 명 / {currentRoom?.maxPlayers || 4} 명</span>
+                    <span className="font-bold text-white">{1 + connectedPeers.length} 명 / {currentRoom?.maxPlayers || 4} 명</span>
                   </div>
                   <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500" style={{ width: `${(1 / (currentRoom?.maxPlayers || 4)) * 100}%` }}></div>
+                    <div className="h-full bg-emerald-500" style={{ width: `${((1 + connectedPeers.length) / (currentRoom?.maxPlayers || 4)) * 100}%` }}></div>
                   </div>
                 </div>
 

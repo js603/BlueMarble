@@ -6,11 +6,17 @@ import './Lobby.css'; // Assuming we will create a CSS file for Lobby
 interface LobbyProps {
     userProfile: UserProfile;
     onJoinRoom: (roomId: string, mode: 'HOST' | 'GUEST', initialInfo?: RoomInfo, password?: string) => void;
+    rooms: RoomInfo[]; // App\uc5d0\uc11c \uc804\ub2ec\ubc1b\uc740 \ubc29 \ubaa9\ub85d
 }
 
-export const Lobby: React.FC<LobbyProps> = ({ userProfile, onJoinRoom }) => {
+export const Lobby: React.FC<LobbyProps> = ({ userProfile, onJoinRoom, rooms: receivedRooms }) => {
     const [rooms, setRooms] = useState<RoomInfo[]>([]);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
+    // Sync received rooms from App
+    useEffect(() => {
+        setRooms(receivedRooms);
+    }, [receivedRooms]);
 
     // Create Room Form State
     const [newRoomName, setNewRoomName] = useState('');
@@ -22,42 +28,19 @@ export const Lobby: React.FC<LobbyProps> = ({ userProfile, onJoinRoom }) => {
     const [passwordPromptRoom, setPasswordPromptRoom] = useState<RoomInfo | null>(null);
     const [inputPassword, setInputPassword] = useState('');
 
-    // To track advertisement interval if we are a host (not used in Lobby component actually, logic is in App or separate)
-    // But wait, the HOST needs to advertise. The Lobby component is for FINDING rooms.
-    // Once a room is created, this client becomes a HOST and enters the Game Room view.
-    // The App component should handle the advertising loop if the gameStatus is 'LOBBY' (waiting for players).
-
     // Clean up rooms that haven't updated in a while (offline hosts)
+    // Note: This is now handled at App level, but kept for local state sync
     useEffect(() => {
         const cleanupInterval = setInterval(() => {
             const now = Date.now();
-            setRooms(prev => prev.filter(r => now - r.lastUpdated < 5000)); // Remove exceeding 5s silence
+            setRooms(prev => prev.filter(r => now - r.lastUpdated < 5000));
         }, 2000);
 
         return () => clearInterval(cleanupInterval);
     }, []);
 
-    // Connect to P2P Lobby
-    useEffect(() => {
-        joinLobby((info: RoomInfo) => {
-            setRooms(prev => {
-                const existingIdx = prev.findIndex(r => r.id === info.id);
-                if (existingIdx !== -1) {
-                    // Update existing
-                    const newRooms = [...prev];
-                    newRooms[existingIdx] = { ...info, lastUpdated: Date.now() };
-                    return newRooms;
-                } else {
-                    // Add new
-                    return [...prev, { ...info, lastUpdated: Date.now() }];
-                }
-            });
-        });
-
-        return () => {
-            leaveLobby();
-        };
-    }, []);
+    // Note: joinLobby is now handled at App level to maintain persistent connection
+    // This component receives room list through props
 
     const handleCreateRoom = () => {
         if (!newRoomName.trim()) {
