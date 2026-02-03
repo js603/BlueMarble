@@ -1,8 +1,16 @@
-import { joinRoom } from 'trystero/torrent';
+import { joinRoom } from 'trystero/nostr';
 import { GameState, ChatMessage, P2PMessage, RoomInfo } from '../types';
 
 const CONFIG = {
-  appId: 'nebula-marble-v2-global', // Unique App ID for Torrent DHT
+  appId: 'nebula-marble-v2-global', // Unique App ID for Nostr
+  relayUrls: [
+    'wss://relay.damus.io',
+    'wss://nos.lol',
+    'wss://relay.snort.social',
+    'wss://nostr.wine',
+    'wss://relay.nostr.band',
+    'wss://relay.nostr.info'
+  ],
   rtcConfig: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -29,7 +37,7 @@ let gameActions: { send: any, get: any } | null = null;
 export const joinLobby = (onRoomListUpdate: (info: RoomInfo) => void) => {
   if (lobbyRoom) return;
 
-  console.log('[P2P] Joining Lobby (Torrent)...');
+  console.log('[P2P] Joining Lobby (Nostr)...');
   lobbyRoom = joinRoom(CONFIG, LOBBY_ROOM_ID);
 
   const [send, get] = lobbyRoom.makeAction('lobbyAction');
@@ -39,13 +47,12 @@ export const joinLobby = (onRoomListUpdate: (info: RoomInfo) => void) => {
   get((msg: P2PMessage, peerId: string) => {
     if (msg.type === 'ROOM_ADVERTISE') {
       const info = msg.payload as RoomInfo;
-      // console.log(`[Lobby] Received ad from ${info.name}`);
+      console.log(`[Lobby] Received room ad: ${info.name} from ${peerId}`);
       onRoomListUpdate(info);
     }
   });
 
-  // Request room info immediately upon joining (optional, depending on strategy)
-  // For now, we wait for periodic advertisements
+  console.log('[P2P] Lobby joined successfully via Nostr relays');
 };
 
 export const leaveLobby = () => {
@@ -64,6 +71,7 @@ export const advertiseRoom = (roomInfo: RoomInfo) => {
       payload: roomInfo
     };
     lobbyActions.send(msg);
+    console.log(`[P2P] Broadcasting room: ${roomInfo.name}`);
   }
 };
 
@@ -76,7 +84,7 @@ export const joinGameRoom = (roomId: string, onMessage: (msg: P2PMessage, peerId
     leaveGameRoom();
   }
 
-  console.log(`[P2P] Joining Game Room (Torrent): ${roomId}`);
+  console.log(`[P2P] Joining Game Room (Nostr): ${roomId}`);
   gameRoom = joinRoom(CONFIG, roomId);
 
   const [send, get] = gameRoom.makeAction('gameAction');
@@ -84,12 +92,12 @@ export const joinGameRoom = (roomId: string, onMessage: (msg: P2PMessage, peerId
 
   // Setup Event Listeners
   gameRoom.onPeerJoin((peerId: string) => {
-    console.log(`[P2P] Peer Joined Game: ${peerId}`);
+    console.log(`[P2P] ✅ Peer Joined Game: ${peerId}`);
     onPeerJoin(peerId);
   });
 
   gameRoom.onPeerLeave((peerId: string) => {
-    console.log(`[P2P] Peer Left Game: ${peerId}`);
+    console.log(`[P2P] ❌ Peer Left Game: ${peerId}`);
     onPeerLeave(peerId);
   });
 
@@ -97,6 +105,7 @@ export const joinGameRoom = (roomId: string, onMessage: (msg: P2PMessage, peerId
     onMessage(msg, peerId);
   });
 
+  console.log(`[P2P] Game room joined successfully`);
   return gameRoom;
 };
 

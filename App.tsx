@@ -85,6 +85,8 @@ export default function App() {
   const [showLobby, setShowLobby] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isHost, setIsHost] = useState(false);
+  const [currentRoom, setCurrentRoom] = useState<RoomInfo | null>(null);
+  const [fillAI, setFillAI] = useState(true);
 
   const gameStateRef = useRef(gameState);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
@@ -156,7 +158,12 @@ export default function App() {
     const isHostMode = mode === 'HOST';
     setIsHost(isHostMode);
     setShowLobby(false);
+    setShowLobby(false);
     startBGM();
+
+    if (initialInfo) {
+      setCurrentRoom(initialInfo);
+    }
 
     joinGameRoom(roomId, (msg: P2PMessage, peerId: string) => {
       if (msg.type === 'STATE_SYNC') {
@@ -178,16 +185,37 @@ export default function App() {
     });
 
     if (isHostMode && userProfile) {
-      // Prepare initial PVE state or wait for players?
-      // Logic from Reference "createPlayers" is used when starting game
+      // Host ready logic
     }
   };
 
   // Triggered by Lobby "Start Game" (Ref adapted)
-  const handleGameStart = (mode: 'PVE' | 'PVP', roomId?: string, playerCount: number = 2) => {
-    // In P2P, we ideally use connected peers. 
-    // For this port, we stick to "Host decides players" logic.
-    const players = createPlayers(playerCount, userProfile, mode === 'PVE');
+  const handleGameStart = () => {
+    if (!currentRoom) return;
+
+    // 현재 접속된 Peer 수 + 나(Host)
+    // 실제 P2P 구현에서는 peer 목록을 가져와야 함. 여기서는 임시로 나 혼자라고 가정하고 나머지는 AI로 채우거나 Peer가 있다고 가정.
+    // 하지만 "방 인원 설정"에 맞추는 것이 핵심.
+
+    const maxPlayers = currentRoom.maxPlayers;
+    // 실제 접속자가 있다면 그들을 포함해야 하지만, 현재 코드상으로는 접속자 리스트 관리가 미비함.
+    // 일단 Host(나) + (fillAI ? 나머지 AI : 0) 로직으로 구성.
+    // P2P 연결된 Peer가 있다면 player 리스트에 추가되어야 함. (추후 과제)
+
+    // 여기서는 "AI 채우기" 옵션이 켜져있으면 maxPlayers까지 AI를 채움.
+    // 꺼져있으면 최소 2인이 되도록 AI 1명만 추가하거나, 접속자가 있으면 그대로 시작.
+
+    const connectedPlayerCount = 1; // 나 자신
+    let targetTotal = connectedPlayerCount;
+
+    if (fillAI) {
+      targetTotal = maxPlayers;
+    } else {
+      // 최소 2명 보장
+      targetTotal = Math.max(2, connectedPlayerCount);
+    }
+
+    const players = createPlayers(targetTotal, userProfile, true); // true = PVE/Mixed Mode
 
     // Assign IDs to connected peers if PVP logic was fully implemented, 
     // but here we follow Reference logic mostly.
@@ -816,25 +844,36 @@ export default function App() {
             </div>
 
             {isHost ? (
-              <div className="flex flex-col gap-3">
-                <div className="text-center mb-2 text-slate-300 text-sm">AI와 함께 시작하거나 플레이어를 기다리세요.</div>
+              <div className="flex flex-col gap-4">
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
+                  <div className="flex justify-between text-slate-300 text-sm mb-2">
+                    <span>현재 접속 인원</span>
+                    <span className="font-bold text-white">1 명 / {currentRoom?.maxPlayers || 4} 명</span>
+                  </div>
+                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500" style={{ width: `${(1 / (currentRoom?.maxPlayers || 4)) * 100}%` }}></div>
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-3 p-3 bg-slate-800/80 rounded-xl cursor-pointer hover:bg-slate-800 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={fillAI}
+                    onChange={e => setFillAI(e.target.checked)}
+                    className="w-5 h-5 rounded border-slate-600 text-emerald-500 focus:ring-emerald-500 bg-slate-900"
+                  />
+                  <div className="flex flex-col text-left">
+                    <span className="text-white font-bold text-sm">빈 자리 AI로 채우기</span>
+                    <span className="text-slate-400 text-xs">부족한 인원을 AI 플레이어로 대체합니다.</span>
+                  </div>
+                </label>
+
                 <button
-                  onClick={() => handleGameStart('PVE', undefined, 2)}
-                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                  onClick={handleGameStart}
+                  className="w-full py-4 bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
                 >
-                  <span>🤖</span> AI 1명과 시작 (2인)
-                </button>
-                <button
-                  onClick={() => handleGameStart('PVE', undefined, 3)}
-                  className="w-full py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
-                >
-                  <span>🤖</span> AI 2명과 시작 (3인)
-                </button>
-                <button
-                  onClick={() => handleGameStart('PVE', undefined, 4)}
-                  className="w-full py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
-                >
-                  <span>🤖</span> AI 3명과 시작 (4인)
+                  <span className="text-2xl">🚀</span>
+                  게임 시작 ({fillAI ? currentRoom?.maxPlayers : Math.max(2, 1)}인)
                 </button>
               </div>
             ) : (
@@ -878,7 +917,7 @@ export default function App() {
                     </div>
                     <div className="flex flex-col leading-none">
                       <span className={`text-[10px] font-bold ${isActive ? 'text-white' : 'text-slate-400'}`}>{p.name} {isMe && '(나)'}</span>
-                      <span className="text-xs font-mono font-bold text-emerald-400">₩{(p.money / 10000).toFixed(0)}만</span>
+                      <span className="text-xs font-mono font-bold text-emerald-400">₩{p.money.toLocaleString()}만</span>
                     </div>
                   </div>
                 );
