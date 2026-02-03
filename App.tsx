@@ -13,6 +13,7 @@ import {
   leaveGameRoom,
   broadcastGameState,
   broadcastGameChat,
+  advertiseRoom,
 } from './services/p2pService';
 import { initAudio, startBGM, stopBGM, toggleMute as toggleAudioMute } from './services/audioService';
 
@@ -128,6 +129,24 @@ export default function App() {
   };
 
   const playSound = (type: string) => { }; // Placeholder
+
+  // --- Room Advertisement Logic (Host) ---
+  useEffect(() => {
+    if (!isHost || !currentRoom || gameState.gameStatus !== 'LOBBY') return;
+
+    // Immediately advertise
+    advertiseRoom(currentRoom);
+
+    // Then advertise every 2 seconds
+    const interval = setInterval(() => {
+      advertiseRoom({
+        ...currentRoom,
+        lastUpdated: Date.now()
+      });
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isHost, currentRoom, gameState.gameStatus]);
 
   // --- Chat ---
   const addChatMessage = useCallback((senderId: number | 'SYSTEM' | 'AI', senderName: string, text: string, avatarId?: number) => {
