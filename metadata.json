@@ -1,0 +1,5 @@
+{
+  "name": "부루마불",
+  "description": "웹토렌트 P2P 기술 개념을 차용한 실시간 채팅 및 부루마불 게임. AI와 게임을 플레이할수있습니다.\n멀티도 지원합니다.",
+  "requestFramePermissions": []
+}
