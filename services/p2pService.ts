@@ -1,10 +1,12 @@
-import { joinRoom } from 'trystero';
+// Switched to MQTT strategy for faster/reliable signaling
+import { joinRoom } from 'trystero/mqtt';
 import { GameState, ChatMessage, P2PMessage } from '../types';
 
-// Use torrent strategy (WebTorrent technology)
 const CONFIG = {
   appId: 'nebula-marble-v2',
-  hasPassword: false,
+  // Public MQTT Broker (Archives of reliability: test.mosquitto.org or broker.hivemq.com)
+  // We use wss:// (Secure WebSocket) which is required for HTTPS pages.
+  brokerUrl: 'wss://test.mosquitto.org:8081',
   rtcConfig: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
