@@ -1,19 +1,21 @@
-import { joinRoom } from 'trystero/mqtt';
+import { joinRoom } from 'trystero/torrent';
 import { GameState, ChatMessage, P2PMessage, RoomInfo } from '../types';
 
 const CONFIG = {
-  appId: 'nebula-marble-v2',
-  brokerUrl: 'wss://test.mosquitto.org:8081', // Public Secure MQTT Broker
+  appId: 'nebula-marble-v2-global', // Unique App ID for Torrent DHT
   rtcConfig: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:global.stun.twilio.com:3478' }
     ]
   }
 };
 
-const LOBBY_ROOM_ID = 'nebula-marble-lobby-v2';
+const LOBBY_ROOM_ID = 'nebula-marble-lobby-v2-global';
 
 // --- Global State ---
 let lobbyRoom: any = null;
@@ -27,7 +29,7 @@ let gameActions: { send: any, get: any } | null = null;
 export const joinLobby = (onRoomListUpdate: (info: RoomInfo) => void) => {
   if (lobbyRoom) return;
 
-  console.log('[P2P] Joining Lobby...');
+  console.log('[P2P] Joining Lobby (Torrent)...');
   lobbyRoom = joinRoom(CONFIG, LOBBY_ROOM_ID);
 
   const [send, get] = lobbyRoom.makeAction('lobbyAction');
@@ -74,7 +76,7 @@ export const joinGameRoom = (roomId: string, onMessage: (msg: P2PMessage, peerId
     leaveGameRoom();
   }
 
-  console.log(`[P2P] Joining Game Room: ${roomId}`);
+  console.log(`[P2P] Joining Game Room (Torrent): ${roomId}`);
   gameRoom = joinRoom(CONFIG, roomId);
 
   const [send, get] = gameRoom.makeAction('gameAction');

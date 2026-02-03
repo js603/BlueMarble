@@ -168,8 +168,10 @@ export default function App() {
       } else if (msg.type === 'CHAT') {
         setChatMessages(prev => [...prev, msg.payload as ChatMessage]);
       }
-    }).then(room => {
-      roomRef.current = room;
+    }, (peerId) => {
+      console.log('Peer joined:', peerId);
+    }, (peerId) => {
+      console.log('Peer left:', peerId);
     }).then(room => {
       roomRef.current = room;
       // Host: 대기실에서 시작 버튼을 눌러 시작하도록 대기
