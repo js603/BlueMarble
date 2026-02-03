@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nebula Marble</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'nebula-bg': '#0f172a',
+              'nebula-card': '#1e293b',
+              'nebula-accent': '#38bdf8',
+              'player-1': '#f472b6',
+              'player-2': '#4ade80',
+            },
+            animation: {
+              'bounce-short': 'bounce 0.5s infinite',
+              'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
+      body {
+        font-family: 'Noto Sans KR', sans-serif;
+        background-color: #0f172a;
+        color: #f8fafc;
+        overflow: hidden; /* App handles scrolling */
+      }
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #1e293b; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #334155; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #475569; 
+      }
+    </style>
+
+<link rel="stylesheet" href="/index.css">
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "trystero": "https://esm.sh/trystero@0.20.0"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/BlueMarble/assets/index-CscGqhCE.js"></script>
+</head>
+  <body>
+    <div id="root"></div>
+</body>
+</html>
