@@ -155,3 +155,39 @@ export const getGamePeers = () => {
   const peers = gameRoom.getPeers();
   return Object.keys(peers); // Convert object to array of peer IDs
 };
+
+// Check if a specific peer is connected
+export const isPeerConnected = (peerId: string): boolean => {
+  if (!gameRoom) return false;
+  const peers = gameRoom.getPeers();
+  const peer = peers[peerId];
+  if (!peer) return false;
+
+  // Check RTCPeerConnection state
+  const pc = peer as RTCPeerConnection;
+  return pc.connectionState === 'connected' || pc.iceConnectionState === 'connected';
+};
+
+// Wait for peer connection to be established
+export const waitForPeerConnection = (peerId: string, timeoutMs = 5000): Promise<boolean> => {
+  return new Promise((resolve) => {
+    const startTime = Date.now();
+
+    const checkConnection = () => {
+      if (isPeerConnected(peerId)) {
+        resolve(true);
+        return;
+      }
+
+      if (Date.now() - startTime > timeoutMs) {
+        console.warn(`[P2P] Peer connection timeout for ${peerId}`);
+        resolve(false);
+        return;
+      }
+
+      setTimeout(checkConnection, 100); // Check every 100ms
+    };
+
+    checkConnection();
+  });
+};

@@ -18,6 +18,7 @@ import {
   joinLobby,
   leaveLobby,
   sendGameMessage,
+  waitForPeerConnection,
 } from './services/p2pService';
 import { initAudio, startBGM, stopBGM, toggleMute as toggleAudioMute } from './services/audioService';
 
@@ -257,6 +258,21 @@ export default function App() {
     }, (peerId) => {
       console.log('Peer joined:', peerId);
       setConnectedPeers(prev => [...prev, peerId]);
+
+      // Guest: Send nickname when peer connection is established
+      if (!isHostMode && userProfile) {
+        waitForPeerConnection(peerId).then((connected) => {
+          if (connected) {
+            sendGameMessage({
+              type: 'GUEST_NICKNAME',
+              payload: userProfile.name
+            });
+            console.log('[Guest] Sent nickname to host:', userProfile.name);
+          } else {
+            console.error('[Guest] Failed to establish peer connection, nickname not sent');
+          }
+        });
+      }
     }, (peerId) => {
       console.log('Peer left:', peerId);
       setConnectedPeers(prev => prev.filter(id => id !== peerId));
@@ -265,21 +281,12 @@ export default function App() {
     roomRef.current = room;
     // Host: 대기실에서 시작 버튼을 눌러 시작하도록 대기
 
-    // Guest: Set myPlayerId and send nickname to host
+    // Guest: Set myPlayerId
     if (!isHostMode && userProfile) {
       setGameState(prev => ({
         ...prev,
         myPlayerId: 2
       }));
-
-      // Send nickname to host
-      setTimeout(() => {
-        sendGameMessage({
-          type: 'GUEST_NICKNAME',
-          payload: userProfile.name
-        });
-        console.log('[Guest] Sent nickname to host:', userProfile.name);
-      }, 500);
     }
 
     if (isHostMode && userProfile) {
@@ -984,8 +991,8 @@ export default function App() {
 
       {gameState.modal && <ActionModal modal={gameState.modal} onAction={handleModalActionWithLogic} />}
 
-      {/* 방 대기실 (Room Lobby) */}
-      {!showLobby && !showIntro && gameState.gameStatus === 'LOBBY' && (
+      {/* Waiting Room (Host Only) */}
+      {showLobby === false && currentRoom && isHost && gameState.gameStatus === 'WAITING' && (
         <div className="absolute inset-0 flex items-center justify-center text-white bg-slate-900 z-50">
           <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl max-w-md w-full border border-slate-700">
             <h2 className="text-3xl font-bold mb-6 text-center text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">게임 대기실</h2>
