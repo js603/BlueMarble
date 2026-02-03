@@ -992,7 +992,7 @@ export default function App() {
       {gameState.modal && <ActionModal modal={gameState.modal} onAction={handleModalActionWithLogic} />}
 
       {/* Waiting Room (Host Only) */}
-      {showLobby === false && currentRoom && isHost && gameState.gameStatus === 'WAITING' && (
+      {showLobby === false && currentRoom && isHost && gameState.gameStatus === 'LOBBY' && (
         <div className="absolute inset-0 flex items-center justify-center text-white bg-slate-900 z-50">
           <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl max-w-md w-full border border-slate-700">
             <h2 className="text-3xl font-bold mb-6 text-center text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">게임 대기실</h2>
