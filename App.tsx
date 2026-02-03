@@ -874,31 +874,33 @@ export default function App() {
 
           {/* Waiting Room Overlay */}
           {gameState.gameStatus === 'LOBBY' && (
-            <div className="absolute inset-0 z-30 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex">
-              {/* Left Side: Player List */}
-              <div className="w-80 bg-slate-900/50 border-r border-slate-800 flex flex-col">
-                <div className="p-4 border-b border-slate-800">
-                  <h2 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+            <div className="absolute inset-0 z-30 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex flex-col lg:flex-row overflow-hidden">
+
+              {/* Left Side / Top Side: Player List */}
+              <div className="w-full lg:w-80 bg-slate-900/50 border-b lg:border-b-0 lg:border-r border-slate-800 flex flex-col max-h-[40vh] lg:max-h-full">
+
+                <div className="p-3 sm:p-4 border-b border-slate-800 flex-shrink-0">
+                  <h2 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
                     대기실
                   </h2>
-                  <div className="text-sm text-slate-400 mt-1">방 코드: {gameState.roomId?.slice(5, 15)}</div>
+                  <div className="text-xs sm:text-sm text-slate-400 mt-1">방 코드: {gameState.roomId?.slice(5, 15)}</div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4">
-                  <div className="text-xs text-slate-500 uppercase font-bold mb-3 tracking-wider">
+                <div className="flex-1 overflow-y-auto p-2 sm:p-4">
+                  <div className="text-xs text-slate-500 uppercase font-bold mb-2 sm:mb-3 tracking-wider">
                     접속자 ({gameState.players.length}/{roomInfo?.maxPlayers || 4})
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5 sm:space-y-2">
                     {gameState.players.map(p => (
-                      <div key={p.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/50 border border-slate-700/50 transition-all hover:bg-slate-800 hover:border-emerald-500/30">
-                        <div className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-2xl" style={{ backgroundColor: p.color }}>
+                      <div key={p.id} className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-800/50 border border-slate-700/50 transition-all hover:bg-slate-800 hover:border-emerald-500/30">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center font-bold text-xl sm:text-2xl flex-shrink-0" style={{ backgroundColor: p.color }}>
                           {p.isComputer ? '🤖' : '👤'}
                         </div>
-                        <div className="flex-1">
-                          <div className="font-bold text-white flex items-center gap-2">
-                            {p.name}
-                            {p.id === 1 && <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded border border-yellow-500/30">HOST</span>}
-                            {p.id === gameState.myPlayerId && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">YOU</span>}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-white flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base">
+                            <span className="truncate">{p.name}</span>
+                            {p.id === 1 && <span className="text-[9px] sm:text-[10px] bg-yellow-500/20 text-yellow-400 px-1 sm:px-1.5 py-0.5 rounded border border-yellow-500/30 flex-shrink-0">HOST</span>}
+                            {p.id === gameState.myPlayerId && <span className="text-[9px] sm:text-[10px] bg-emerald-500/20 text-emerald-400 px-1 sm:px-1.5 py-0.5 rounded border border-emerald-500/30 flex-shrink-0">YOU</span>}
                           </div>
                           <div className="text-xs text-slate-400">
                             {p.isComputer ? 'AI Player' : 'Online'}
@@ -910,7 +912,7 @@ export default function App() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="p-4 border-t border-slate-800 space-y-2">
+                <div className="p-2 sm:p-4 border-t border-slate-800 space-y-1.5 sm:space-y-2 flex-shrink-0">
                   {isHost ? (
                     <>
                       <button
@@ -921,31 +923,31 @@ export default function App() {
                           setShowRoomSettings(true);
                         }}
                         type="button"
-                        className="w-full py-3 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 hover:border-slate-600 transition-all flex items-center justify-center gap-2 cursor-pointer relative z-50"
+                        className="w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl font-bold text-sm sm:text-base bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 hover:border-slate-600 transition-all flex items-center justify-center gap-2 cursor-pointer relative z-50"
                       >
                         <span>⚙️</span> 방 설정
                       </button>
                       <button
                         onClick={handleLobbyStart}
                         disabled={gameState.players.length < 2}
-                        className="w-full py-3 rounded-xl font-bold bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-lg shadow-emerald-500/20 transition-all disabled:from-slate-700 disabled:to-slate-700 disabled:shadow-none disabled:cursor-not-allowed"
+                        className="w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl font-bold text-sm sm:text-base bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-lg shadow-emerald-500/20 transition-all disabled:from-slate-700 disabled:to-slate-700 disabled:shadow-none disabled:cursor-not-allowed"
                       >
                         게임 시작
                       </button>
                     </>
                   ) : (
-                    <div className="text-center text-slate-400 text-sm py-3 animate-pulse">
+                    <div className="text-center text-slate-400 text-xs sm:text-sm py-2 sm:py-3 animate-pulse">
                       호스트가 게임을 시작하길 기다리는 중...
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Right Side: Chat */}
-              <div className="flex-1 flex flex-col bg-slate-900/30">
-                <div className="p-4 border-b border-slate-800 bg-slate-900/50">
-                  <h3 className="text-lg font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">채팅</h3>
-                  <div className="text-xs text-slate-500 mt-1">실시간 대화</div>
+              {/* Right Side / Bottom Side: Chat */}
+              <div className="flex-1 flex flex-col bg-slate-900/30 min-h-0">
+                <div className="p-3 sm:p-4 border-b border-slate-800 bg-slate-900/50 flex-shrink-0">
+                  <h3 className="text-base sm:text-lg font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">채팅</h3>
+                  <div className="text-[10px] sm:text-xs text-slate-500 mt-1">실시간 대화</div>
                 </div>
                 <Chat
                   messages={chatMessages}
@@ -1210,7 +1212,7 @@ export default function App() {
           {/* --- Sliding Sidebar (Right Drawer - Only during PLAYING) --- */}
           {gameState.gameStatus === 'PLAYING' && (
             <div
-              className={`fixed inset-y-0 right-0 w-80 sm:w-96 bg-slate-950/95 backdrop-blur-xl border-l border-slate-800 shadow-2xl z-50 transform transition-transform duration-300 ease-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}
+              className={`fixed inset-y-0 right-0 w-full sm:w-96 bg-slate-950/95 backdrop-blur-xl border-l border-slate-800 shadow-2xl z-50 transform transition-transform duration-300 ease-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}
             >
               {/* Header Section: Player Status */}
               <div className="flex-shrink-0 bg-slate-900/50 border-b border-slate-800 p-4 relative">
