@@ -218,6 +218,15 @@ export default function App() {
               addChatMessage('SYSTEM', 'System', `${guestProfile.name}님이 입장했습니다!`);
               return { ...prev, players: [...prev.players, newPlayer] };
             });
+          } else if (msg.type === 'STATE_SYNC') {
+            // Host receives state update from Guest (Active Move)
+            const remoteState = msg.payload as GameState;
+            setGameState(prev => ({
+              ...remoteState,
+              myPlayerId: prev.myPlayerId, // Maintain my identity
+              isMultiplayer: true,
+              roomId: roomId
+            }));
           } else if (msg.type === 'CHAT') {
             setChatMessages(prev => [...prev, msg.payload]);
           }
