@@ -5,7 +5,7 @@ import './Lobby.css'; // Assuming we will create a CSS file for Lobby
 
 interface LobbyProps {
     userProfile: UserProfile;
-    onJoinRoom: (roomId: string, mode: 'HOST' | 'GUEST') => void;
+    onJoinRoom: (roomId: string, mode: 'HOST' | 'GUEST', initialInfo?: RoomInfo, password?: string) => void;
 }
 
 export const Lobby: React.FC<LobbyProps> = ({ userProfile, onJoinRoom }) => {
@@ -115,7 +115,7 @@ export const Lobby: React.FC<LobbyProps> = ({ userProfile, onJoinRoom }) => {
 
         // For now, onCreateRoom(roomInfo)
 
-        (onJoinRoom as any)(roomId, 'HOST', initialRoomInfo); // Passing extra arg
+        onJoinRoom(roomId, 'HOST', initialRoomInfo);
     };
 
     const handleJoinClick = (room: RoomInfo) => {
@@ -152,7 +152,7 @@ export const Lobby: React.FC<LobbyProps> = ({ userProfile, onJoinRoom }) => {
         // 3. P2P Join Request includes the password.
         // 4. Host verifies. If wrong, Host kicks or sends "Auth Failed".
 
-        onJoinRoom(passwordPromptRoom.id, 'GUEST', inputPassword as any);
+        onJoinRoom(passwordPromptRoom.id, 'GUEST', undefined, inputPassword);
         setPasswordPromptRoom(null);
     };
 
