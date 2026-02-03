@@ -14,6 +14,7 @@ import {
   broadcastGameState,
   broadcastGameChat,
   advertiseRoom,
+  getGamePeers,
 } from './services/p2pService';
 import { initAudio, startBGM, stopBGM, toggleMute as toggleAudioMute } from './services/audioService';
 
@@ -128,8 +129,6 @@ export default function App() {
     toggleAudioMute(newState);
   };
 
-  const playSound = (type: string) => { }; // Placeholder
-
   // --- Room Advertisement Logic (Host) ---
   useEffect(() => {
     if (!isHost || !currentRoom || gameState.gameStatus !== 'LOBBY') return;
@@ -177,7 +176,6 @@ export default function App() {
     const isHostMode = mode === 'HOST';
     setIsHost(isHostMode);
     setShowLobby(false);
-    setShowLobby(false);
     startBGM();
 
     if (initialInfo) {
@@ -212,25 +210,18 @@ export default function App() {
   const handleGameStart = () => {
     if (!currentRoom) return;
 
-    // 현재 접속된 Peer 수 + 나(Host)
-    // 실제 P2P 구현에서는 peer 목록을 가져와야 함. 여기서는 임시로 나 혼자라고 가정하고 나머지는 AI로 채우거나 Peer가 있다고 가정.
-    // 하지만 "방 인원 설정"에 맞추는 것이 핵심.
-
+    // 실제 접속된 Peer 수 계산
+    const connectedPeers = getGamePeers();
+    const connectedPlayerCount = 1 + connectedPeers.length; // Host + 연결된 Peer들
     const maxPlayers = currentRoom.maxPlayers;
-    // 실제 접속자가 있다면 그들을 포함해야 하지만, 현재 코드상으로는 접속자 리스트 관리가 미비함.
-    // 일단 Host(나) + (fillAI ? 나머지 AI : 0) 로직으로 구성.
-    // P2P 연결된 Peer가 있다면 player 리스트에 추가되어야 함. (추후 과제)
 
-    // 여기서는 "AI 채우기" 옵션이 켜져있으면 maxPlayers까지 AI를 채움.
-    // 꺼져있으면 최소 2인이 되도록 AI 1명만 추가하거나, 접속자가 있으면 그대로 시작.
-
-    const connectedPlayerCount = 1; // 나 자신
     let targetTotal = connectedPlayerCount;
 
     if (fillAI) {
+      // 빈 자리를 AI로 채움
       targetTotal = maxPlayers;
     } else {
-      // 최소 2명 보장
+      // AI 채우기 해제 시 최소 2명 보장
       targetTotal = Math.max(2, connectedPlayerCount);
     }
 
@@ -545,7 +536,6 @@ export default function App() {
     if (currentState.isRolling || currentState.isMoving || currentState.modal || currentState.waitingForNextTurn || currentState.isSelectingMoveTarget || currentState.pendingArrivalId || currentState.outstandingDebt > 0) return;
 
     setGameState(prev => ({ ...prev, isRolling: true }));
-    playSound('roll');
 
     setTimeout(() => {
       const d1 = Math.floor(Math.random() * 6) + 1;
