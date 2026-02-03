@@ -62,11 +62,11 @@ export interface GameState {
   pendingArrivalId: number | null; // Player ID waiting for arrival processing (e.g., after Golden Key move)
   outstandingDebt: number; // Amount needed to proceed
   creditorId: number | null; // Who needs to be paid (null for bank)
-  
+
   // P2P Multiplayer Fields
   isMultiplayer: boolean;
   roomId?: string;
-  myPlayerId?: number; 
+  myPlayerId?: number;
   isConnected?: boolean;
 }
 
@@ -85,8 +85,21 @@ export interface GameEventContext {
   detail: string;
 }
 
+// Lobby & Room Types
+export interface RoomInfo {
+  id: string;
+  name: string;
+  hostName: string;
+  currentPlayers: number;
+  maxPlayers: number;
+  isPrivate: boolean;
+  password?: string; // Only used for Join Request verification, not broadcasted
+  status: 'WAITING' | 'PLAYING';
+  lastUpdated: number;
+}
+
 export interface P2PMessage {
-  type: 'STATE_SYNC' | 'CHAT' | 'JOIN_REQ' | 'START_GAME';
+  type: 'STATE_SYNC' | 'CHAT' | 'JOIN_REQ' | 'START_GAME' | 'ROOM_ADVERTISE' | 'ROOM_REQUEST';
   payload: any;
 }
 

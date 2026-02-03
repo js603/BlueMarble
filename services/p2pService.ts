@@ -1,123 +1,143 @@
-// Switched to MQTT strategy for faster/reliable signaling
 import { joinRoom } from 'trystero/mqtt';
-import { GameState, ChatMessage, P2PMessage } from '../types';
+import { GameState, ChatMessage, P2PMessage, RoomInfo } from '../types';
 
 const CONFIG = {
   appId: 'nebula-marble-v2',
-  // Public MQTT Broker (Archives of reliability: test.mosquitto.org or broker.hivemq.com)
-  // We use wss:// (Secure WebSocket) which is required for HTTPS pages.
-  brokerUrl: 'wss://test.mosquitto.org:8081',
+  brokerUrl: 'wss://test.mosquitto.org:8081', // Public Secure MQTT Broker
   rtcConfig: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:global.stun.twilio.com:3478' }
     ]
   }
 };
 
-let room: any = null;
-let sendAction: any = null;
-let onActionReceive: any = null;
+const LOBBY_ROOM_ID = 'nebula-marble-lobby-v2';
 
-let currentRoomId: string | null = null;
+// --- Global State ---
+let lobbyRoom: any = null;
+let gameRoom: any = null;
 
-export const initP2PRoom = (roomId: string) => {
-  if (room) {
-    if (currentRoomId === roomId) {
-      console.log(`[P2P] Already in room: ${roomId}`);
-      return room;
+let lobbyActions: { send: any, get: any } | null = null;
+let gameActions: { send: any, get: any } | null = null;
+
+// --- Lobby Functions ---
+
+export const joinLobby = (onRoomListUpdate: (info: RoomInfo) => void) => {
+  if (lobbyRoom) return;
+
+  console.log('[P2P] Joining Lobby...');
+  lobbyRoom = joinRoom(CONFIG, LOBBY_ROOM_ID);
+
+  const [send, get] = lobbyRoom.makeAction('lobbyAction');
+  lobbyActions = { send, get };
+
+  // Listen for room advertisements
+  get((msg: P2PMessage, peerId: string) => {
+    if (msg.type === 'ROOM_ADVERTISE') {
+      const info = msg.payload as RoomInfo;
+      // console.log(`[Lobby] Received ad from ${info.name}`);
+      onRoomListUpdate(info);
     }
-    console.log(`[P2P] Switching room from ${currentRoomId} to ${roomId}`);
-    leaveP2PRoom();
+  });
+
+  // Request room info immediately upon joining (optional, depending on strategy)
+  // For now, we wait for periodic advertisements
+};
+
+export const leaveLobby = () => {
+  if (lobbyRoom) {
+    lobbyRoom.leave();
+    lobbyRoom = null;
+    lobbyActions = null;
+    console.log('[P2P] Left Lobby');
+  }
+};
+
+export const advertiseRoom = (roomInfo: RoomInfo) => {
+  if (lobbyActions) {
+    const msg: P2PMessage = {
+      type: 'ROOM_ADVERTISE',
+      payload: roomInfo
+    };
+    lobbyActions.send(msg);
+  }
+};
+
+
+// --- Game Room Functions ---
+
+export const joinGameRoom = (roomId: string, onMessage: (msg: P2PMessage, peerId: string) => void, onPeerJoin: (peerId: string) => void, onPeerLeave: (peerId: string) => void) => {
+  if (gameRoom) {
+    console.warn('[P2P] Already in a game room, leaving first...');
+    leaveGameRoom();
   }
 
-  // Trystero (Torrent) uses these trackers by default, but we enforce them plus more
-  // Note: Trystero's joinRoom config doesn't seemingly natively accept trackerUrls in the typed config
-  // unless we cast or it's implicitly supported. 
-  // Should check if we can pass it. 
-  // If not, we rely on defaults. 
-  // Let's stick to the typed config to avoid TS errors, but add more STUNs.
-  // Actually, Trystero uses `tracker.openwebtorrent.com` etc.
+  console.log(`[P2P] Joining Game Room: ${roomId}`);
+  gameRoom = joinRoom(CONFIG, roomId);
 
-  room = joinRoom(CONFIG, roomId);
-  currentRoomId = roomId;
+  const [send, get] = gameRoom.makeAction('gameAction');
+  gameActions = { send, get };
 
-  // Debug: Log peer events immediately
-  room.onPeerJoin((peerId: string) => console.log(`[P2P] Raw Peer Joined: ${peerId}`));
-  room.onPeerLeave((peerId: string) => console.log(`[P2P] Raw Peer Left: ${peerId}`));
+  // Setup Event Listeners
+  gameRoom.onPeerJoin((peerId: string) => {
+    console.log(`[P2P] Peer Joined Game: ${peerId}`);
+    onPeerJoin(peerId);
+  });
 
-  const [send, get] = room.makeAction('gameAction');
+  gameRoom.onPeerLeave((peerId: string) => {
+    console.log(`[P2P] Peer Left Game: ${peerId}`);
+    onPeerLeave(peerId);
+  });
 
-  sendAction = send;
-  onActionReceive = get;
+  get((msg: P2PMessage, peerId: string) => {
+    onMessage(msg, peerId);
+  });
 
-  console.log(`[P2P] Joined room: ${roomId}`);
-  return room;
+  return gameRoom;
 };
 
-export const getPeers = () => {
-  if (!room) return [];
-  return room.getPeers(); // Trystero returns simple map or list usually
+export const leaveGameRoom = () => {
+  if (gameRoom) {
+    try {
+      gameRoom.leave();
+    } catch (e) {
+      console.error('[P2P] Error leaving game room:', e);
+    }
+    gameRoom = null;
+    gameActions = null;
+    console.log('[P2P] Left Game Room');
+  }
 };
 
-export const broadcastState = (state: GameState) => {
-  if (sendAction) {
-    // Only send essential data to save bandwidth, but for simplicity we send full state here
-    // In a production app, we would send deltas
+export const broadcastGameState = (state: GameState) => {
+  if (gameActions) {
     const msg: P2PMessage = {
       type: 'STATE_SYNC',
       payload: state
     };
-    sendAction(msg);
+    gameActions.send(msg);
   }
 };
 
-export const broadcastChat = (message: ChatMessage) => {
-  if (sendAction) {
+export const broadcastGameChat = (chatMsg: ChatMessage) => {
+  if (gameActions) {
     const msg: P2PMessage = {
       type: 'CHAT',
-      payload: message
+      payload: chatMsg
     };
-    sendAction(msg);
+    gameActions.send(msg);
   }
 };
 
-// New Generic Sender
-export const sendGenericMessage = (msg: P2PMessage) => {
-  if (sendAction) {
-    sendAction(msg);
-  }
-}
-
-export const onP2PMessage = (callback: (msg: P2PMessage) => void) => {
-  if (onActionReceive) {
-    onActionReceive((data: P2PMessage, peerId: string) => {
-      callback(data);
-    });
+export const sendGameMessage = (msg: P2PMessage) => {
+  if (gameActions) {
+    gameActions.send(msg);
   }
 };
 
-export const onPeerJoin = (callback: (peerId: string) => void) => {
-  if (room) {
-    room.onPeerJoin(callback);
-  }
-};
-
-export const leaveP2PRoom = () => {
-  if (room) {
-    try {
-      room.leave();
-    } catch (e) {
-      console.error('[P2P] Error leaving room:', e);
-    }
-    room = null;
-    sendAction = null;
-    onActionReceive = null;
-    currentRoomId = null;
-    console.log('[P2P] Left room');
-  }
+export const getGamePeers = () => {
+  if (!gameRoom) return [];
+  return gameRoom.getPeers();
 };
