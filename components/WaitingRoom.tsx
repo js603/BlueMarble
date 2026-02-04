@@ -46,8 +46,9 @@ export function WaitingRoom({
                             </div>
                         </div>
 
-                        {/* Connected Peers (Guests) */}
-                        {connectedPeers.map((peerId, idx) => {
+
+                        {/* Connected Peers (Guests) - 호스트 뷰 */}
+                        {isHost && connectedPeers.map((peerId, idx) => {
                             const guestNickname = peerNicknames[peerId] || `플레이어 ${idx + 2}`;
                             return (
                                 <div key={peerId} className="flex items-center gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
@@ -63,6 +64,22 @@ export function WaitingRoom({
                                 </div>
                             );
                         })}
+
+                        {/* 게스트 자신 표시 - 게스트 뷰 */}
+                        {!isHost && userProfile && (
+                            <div className="flex items-center gap-4 bg-slate-900/50 p-4 rounded-xl border border-cyan-500/30">
+                                <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center bg-slate-800 overflow-hidden" style={{ borderColor: userProfile.color }}>
+                                    <PlayerAvatar playerId={2} color={userProfile.color} isActive={false} avatarId={userProfile.avatarId} />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="font-bold text-lg">{userProfile.name}</div>
+                                    <div className="text-xs text-cyan-400 font-mono flex items-center gap-2">
+                                        <span className="bg-cyan-500/20 px-2 py-0.5 rounded">GUEST</span>
+                                        <span>(나)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

@@ -115,7 +115,8 @@ export const Lobby: React.FC<LobbyProps> = ({ userProfile, onJoinRoom, rooms: re
             setPasswordPromptRoom(room);
             setInputPassword('');
         } else {
-            onJoinRoom(room.id, 'GUEST');
+            // 게스트에게 방 정보를 전달하여 대기실 화면이 정상 표시되도록 함
+            onJoinRoom(room.id, 'GUEST', room);
         }
     };
 
@@ -135,7 +136,8 @@ export const Lobby: React.FC<LobbyProps> = ({ userProfile, onJoinRoom, rooms: re
         // 3. P2P Join Request includes the password.
         // 4. Host verifies. If wrong, Host kicks or sends "Auth Failed".
 
-        onJoinRoom(passwordPromptRoom.id, 'GUEST', undefined, inputPassword);
+        // 비밀번호 방도 room 정보를 전달
+        onJoinRoom(passwordPromptRoom.id, 'GUEST', passwordPromptRoom, inputPassword);
         setPasswordPromptRoom(null);
     };
 
