@@ -1,5 +1,5 @@
 import { useCallback, useRef, MutableRefObject } from 'react';
-import { BoardCell, CellType, GameState, ModalState, ChatMessage } from '../types';
+import { BoardCell, CellType, GameState, ModalState, ChatMessage, Player } from '../types';
 import { GOLDEN_KEYS, SALARY } from '../constants';
 import { sendGameMessage } from '../services/p2pService';
 
@@ -31,6 +31,55 @@ export function useGameLogic({
     isHost
 }: UseGameLogicProps): UseGameLogicReturn {
 
+    // --- PURE STATE CREATOR FOR BANKRUPTCY ---
+    // This helper returns a NEW state object representing the post-bankruptcy state.
+    // It DOES NOT call setGameState directly, avoiding nested updates and race conditions.
+    const getBankruptcyState = (prevState: GameState, playerIdx: number, creditorId: number | null): GameState => {
+        const player = prevState.players[playerIdx];
+        if (!player) return prevState;
+
+        let newPlayers = [...prevState.players];
+        const remainingMoney = Math.max(0, player.money);
+
+        // 1. Mark as Bankrupt
+        newPlayers[playerIdx] = { ...player, money: -1, isBankrupt: true };
+
+        // 2. Clear all Assets (Lands) owned by the bankrupt player
+        const newBoard = prevState.board.map(cell => {
+            if (cell.ownerId === player.id) {
+                return { ...cell, ownerId: null, buildingLevel: 0 };
+            }
+            return cell;
+        });
+
+        // 3. Transfer remaining funds to the creditor
+        if (creditorId) {
+            const cIdx = newPlayers.findIndex(p => p.id === creditorId);
+            if (cIdx !== -1) {
+                newPlayers[cIdx] = { ...newPlayers[cIdx], money: newPlayers[cIdx].money + remainingMoney };
+                // Side-Effect: Logging remains within the logic but outside the return object for clarity
+                addChatMessage('SYSTEM', '양도', `${player.name}님의 남은 자금 ₩${remainingMoney.toLocaleString()}이 ${newPlayers[cIdx].name}님에게 양도되었습니다.`);
+            }
+        }
+
+        addChatMessage('SYSTEM', '파산', `⚠️ ${player.name}님이 파산했습니다! 모든 자산이 국고로 환수됩니다.`);
+
+        // 4. Return new clean state (Next turn flag ON, Modal/Debt OFF, Movement OFF)
+        return {
+            ...prevState,
+            players: newPlayers,
+            board: newBoard,
+            outstandingDebt: 0,
+            creditorId: null,
+            modal: null,  // CRITICAL: Ensure modal is closed
+            waitingForNextTurn: true,
+            isRolling: false,
+            isMoving: false,
+            isSelectingMoveTarget: false,
+            pendingArrivalId: null
+        };
+    };
+
     const calculateSellPrice = useCallback((cell: BoardCell): number => {
         let buildingCost = 0;
         for (let i = 1; i <= cell.buildingLevel; i++) {
@@ -53,13 +102,14 @@ export function useGameLogic({
 
     const handlePayment = useCallback((amount: number, creditorId: number | null, reason: string): boolean => {
         const currentState = gameStateRef.current;
-        const player = currentState.players[currentState.currentPlayerIndex];
+        const pIdx = currentState.currentPlayerIndex;
+        const player = currentState.players[pIdx];
         if (!player) return false;
 
         if (player.money >= amount) {
             setGameState(prev => {
                 let newPlayers = [...prev.players];
-                let p = { ...newPlayers[prev.currentPlayerIndex] };
+                let p = { ...newPlayers[pIdx] };
                 p.money -= amount;
                 if (creditorId) {
                     const creditorIdx = newPlayers.findIndex(cp => cp.id === creditorId);
@@ -78,50 +128,12 @@ export function useGameLogic({
 
         const ownedCells = currentState.board.filter(c => c.ownerId === player.id);
 
-        // [Normal Goal] 자산이 하나라도 있다면 즉시 파산시키지 않고 매각 단계(DEBT)로 보냄
         if (ownedCells.length === 0 && player.money < amount) {
-            setGameState(prev => {
-                let newPlayers = [...prev.players];
-                const currentPlayer = { ...newPlayers[prev.currentPlayerIndex] };
-                const remainingMoney = Math.max(0, currentPlayer.money); // 파산자의 남은 돈
-
-                newPlayers[prev.currentPlayerIndex] = { ...currentPlayer, money: -1, isBankrupt: true };
-
-                // 파산자의 모든 자산 초기화 (이미 ownedCells.length === 0 이겠지만 안전을 위해 유지)
-                const newBoard = prev.board.map(cell => {
-                    if (cell.ownerId === currentPlayer.id) {
-                        return { ...cell, ownerId: null, buildingLevel: 0 };
-                    }
-                    return cell;
-                });
-
-                // [Normal Goal] 파산 시 잔여 현금을 채권자에게 양도
-                if (creditorId) {
-                    const creditorIdx = newPlayers.findIndex(p => p.id === creditorId);
-                    if (creditorIdx !== -1) {
-                        newPlayers[creditorIdx] = {
-                            ...newPlayers[creditorIdx],
-                            money: newPlayers[creditorIdx].money + remainingMoney
-                        };
-                        addChatMessage('SYSTEM', '양도', `${player.name}님의 남은 자금 ₩${remainingMoney.toLocaleString()}이 ${newPlayers[creditorIdx].name}님에게 양도되었습니다.`);
-                    }
-                }
-
-                addChatMessage('SYSTEM', '파산', `⚠️ ${player.name}님은 더 이상 팔 수 있는 자산이 없어 파산했습니다!`);
-                return {
-                    ...prev,
-                    players: newPlayers,
-                    board: newBoard,
-                    outstandingDebt: 0,
-                    creditorId: null,
-                    waitingForNextTurn: true,
-                    modal: null
-                };
-            });
+            setGameState(prev => getBankruptcyState(prev, pIdx, creditorId));
             return false;
         }
 
-        // 현금은 부족하지만 팔 땅이 있는 경우
+        // Cash is low but has lands -> Show DEBT modal
         setGameState(prev => ({
             ...prev,
             outstandingDebt: amount,
@@ -135,12 +147,13 @@ export function useGameLogic({
             }
         }));
         return false;
-    }, [gameStateRef, setGameState, addChatMessage, calculateSellPrice]);
+    }, [gameStateRef, setGameState, addChatMessage]);
 
     const handleArrival = useCallback((playerId: number) => {
         setGameState(prev => {
-            const player = prev.players.find(p => p.id === playerId);
-            if (!player) return prev;
+            const pIdx = prev.players.findIndex(p => p.id === playerId);
+            if (pIdx === -1) return prev;
+            const player = prev.players[pIdx];
 
             const cell = prev.board[player.position];
             let modal: ModalState | null = null;
@@ -202,11 +215,10 @@ export function useGameLogic({
                         } else {
                             const ownedCells = prev.board.filter(c => c.ownerId === updatedPlayer.id);
                             const totalAssetValue = ownedCells.reduce((sum, c) => sum + calculateSellPrice(c), 0);
+
                             if (updatedPlayer.money + totalAssetValue < rent) {
-                                updatedPlayer.isBankrupt = true;
-                                updatedPlayer.money = -1;
-                                addChatMessage('SYSTEM', '파산', `⚠️ ${updatedPlayer.name}님은 통행료를 감당하지 못해 파산했습니다!`);
-                                return { ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p), waitingForNextTurn: true, isRolling: false, isMoving: false };
+                                // DEAD ON ARRIVAL -> Return the bankruptcy state immediately
+                                return getBankruptcyState(prev, pIdx, owner.id);
                             } else {
                                 return {
                                     ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p),
@@ -230,9 +242,7 @@ export function useGameLogic({
                         updatedPlayer.money -= amount;
                         modal = { isOpen: true, type: 'INFO', title: '황금열쇠 (지불)', message: msg };
                     } else if (updatedPlayer.money + totalAssetValue < amount) {
-                        updatedPlayer.isBankrupt = true;
-                        addChatMessage('SYSTEM', '파산', `⚠️ ${updatedPlayer.name} 파산!`);
-                        return { ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p), waitingForNextTurn: true, isRolling: false, isMoving: false };
+                        return getBankruptcyState(prev, pIdx, null);
                     } else {
                         return {
                             ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p),
@@ -259,6 +269,7 @@ export function useGameLogic({
             } else if (cell.type === CellType.OLYMPIC) {
                 if (updatedPlayer.isComputer) {
                     addChatMessage('SYSTEM', 'AI', '알파고가 이동할 도시를 고민중입니다...');
+                    return { ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p), waitingForNextTurn: true, isRolling: false, isMoving: false };
                 } else {
                     addChatMessage('SYSTEM', '콩코드', '🚀 콩코드 여객기 탑승! 이동할 도시를 지도에서 선택하세요.');
                     return { ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p), waitingForNextTurn: false, isRolling: false, isMoving: false, isSelectingMoveTarget: true };
@@ -272,9 +283,7 @@ export function useGameLogic({
                     addChatMessage('SYSTEM', '복지기금', '사회복지기금 300만원을 기부했습니다.');
                     return { ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p), waitingForNextTurn: true, isRolling: false, isMoving: false };
                 } else if (updatedPlayer.money + totalAssetValue < amount) {
-                    updatedPlayer.isBankrupt = true;
-                    addChatMessage('SYSTEM', '파산', `⚠️ ${updatedPlayer.name} 파산!`);
-                    return { ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p), waitingForNextTurn: true, isRolling: false, isMoving: false };
+                    return getBankruptcyState(prev, pIdx, null);
                 } else {
                     return {
                         ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p),
@@ -290,9 +299,7 @@ export function useGameLogic({
             }
 
             if (updatedPlayer.money < 0) {
-                updatedPlayer.isBankrupt = true;
-                addChatMessage('SYSTEM', '파산', `⚠️ ${updatedPlayer.name}님이 파산했습니다!`);
-                return { ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p), waitingForNextTurn: true, isRolling: false, isMoving: false };
+                return getBankruptcyState(prev, pIdx, null);
             }
 
             if (!modal) {
@@ -322,6 +329,7 @@ export function useGameLogic({
             return { ...prev, players: newPlayers, isSelectingMoveTarget: false };
         });
 
+        // This timeout is for UI animation sequence, not for state sync hack.
         setTimeout(() => {
             const pid = gameStateRef.current.players[gameStateRef.current.currentPlayerIndex]?.id;
             if (pid) handleArrival(pid);
@@ -356,10 +364,8 @@ export function useGameLogic({
 
     const handleRollDice = useCallback(() => {
         const currentState = gameStateRef.current;
-        // 더욱 강력한 가드: 게임 상태와 이동 여부를 모두 체크
         if (currentState.isRolling || currentState.isMoving || currentState.modal || currentState.waitingForNextTurn || currentState.isSelectingMoveTarget || currentState.pendingArrivalId || currentState.outstandingDebt > 0 || currentState.gameStatus !== 'PLAYING') return;
 
-        // 주사위 값을 미리 계산
         const d1 = Math.floor(Math.random() * 6) + 1;
         const d2 = Math.floor(Math.random() * 6) + 1;
         const total = d1 + d2;
@@ -385,7 +391,6 @@ export function useGameLogic({
             moveSteps = total;
         }
 
-        // 주사위 애니메이션 시작 상태 설정 (결과 포함)
         setGameState(prev => {
             let newPlayers = [...prev.players];
             let currentPlayer = { ...newPlayers[prev.currentPlayerIndex] };
@@ -401,8 +406,8 @@ export function useGameLogic({
                     players: newPlayers,
                     consecutiveDoubles: 0,
                     isRolling: true,
-                    pendingMoveSteps: 0, // 이동 없음
-                    waitingForNextTurn: false // isRolling: false가 되면 waitingForNextTurn: true로 전환
+                    pendingMoveSteps: 0,
+                    waitingForNextTurn: false
                 };
             }
             if (isTrapStay) {
@@ -437,7 +442,7 @@ export function useGameLogic({
                 players: newPlayers,
                 consecutiveDoubles: newDoubles,
                 isRolling: true,
-                pendingMoveSteps: moveSteps // 이동할 칸 수 저장
+                pendingMoveSteps: moveSteps
             };
         });
     }, [gameStateRef, setGameState, addChatMessage]);
@@ -446,7 +451,6 @@ export function useGameLogic({
         const s = gameStateRef.current;
         if (!s.players[s.currentPlayerIndex]) return;
 
-        // Guest: Send action to Host instead of modifying state directly
         if (!isHost && s.isMultiplayer) {
             const myId = s.myPlayerId;
             const currentPlayer = s.players[s.currentPlayerIndex];
@@ -455,20 +459,16 @@ export function useGameLogic({
                     type: 'PLAYER_ACTION',
                     payload: { action: 'NEXT_TURN', playerId: myId }
                 });
-                if (process.env.NODE_ENV === 'development') {
-                    console.log('[Guest] Sent NEXT_TURN action to Host');
-                }
-                return; // Don't modify local state - Host will broadcast new state
+                return;
             }
         }
 
-        // Host: Modify state directly
         setGameState(prev => {
             let nextIndex = prev.currentPlayerIndex;
             let nextTurnCount = prev.turnCount;
             let nextDoubles = prev.consecutiveDoubles;
 
-            if (prev.consecutiveDoubles > 0 && prev.players[prev.currentPlayerIndex].isTrapped === 0) {
+            if (prev.consecutiveDoubles > 0 && prev.players[prev.currentPlayerIndex].isTrapped === 0 && !prev.players[prev.currentPlayerIndex].isBankrupt) {
                 addChatMessage('SYSTEM', 'System', `${prev.players[prev.currentPlayerIndex].name}님의 연속 턴!`);
             } else {
                 nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
@@ -547,7 +547,6 @@ export function useGameLogic({
     const handleCellClick = useCallback((index: number) => {
         const s = gameStateRef.current;
         if (!s.players[s.currentPlayerIndex]) return;
-
         const currentPlayer = s.players[s.currentPlayerIndex];
 
         if (s.isSelectingMoveTarget && !currentPlayer.isComputer && s.outstandingDebt === 0) {

@@ -35,7 +35,7 @@ let gameActions: { send: any, get: any } | null = null;
 
 // --- Lobby Functions ---
 
-export const joinLobby = (onRoomListUpdate: (info: RoomInfo) => void) => {
+export const joinLobby = (onRoomListUpdate: (info: RoomInfo) => void, onLobbyMessage?: (msg: ChatMessage) => void) => {
   if (lobbyRoom) return;
 
   console.log('[P2P] Joining Lobby (Nostr)...');
@@ -50,6 +50,10 @@ export const joinLobby = (onRoomListUpdate: (info: RoomInfo) => void) => {
       const info = msg.payload as RoomInfo;
       console.log(`[Lobby] Received room ad: ${info.name} from ${peerId}`);
       onRoomListUpdate(info);
+    } else if (msg.type === 'LOBBY_CHAT' && onLobbyMessage) {
+      const chatMsg = msg.payload as ChatMessage;
+      console.log(`[Lobby] Received chat: ${chatMsg.text}`);
+      onLobbyMessage(chatMsg);
     }
   });
 
@@ -73,6 +77,16 @@ export const advertiseRoom = (roomInfo: RoomInfo) => {
     };
     lobbyActions.send(msg);
     console.log(`[P2P] Broadcasting room: ${roomInfo.name}`);
+  }
+};
+
+export const broadcastLobbyChat = (chatMsg: ChatMessage) => {
+  if (lobbyActions) {
+    const msg: P2PMessage = {
+      type: 'LOBBY_CHAT',
+      payload: chatMsg
+    };
+    lobbyActions.send(msg);
   }
 };
 

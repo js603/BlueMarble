@@ -1,7 +1,8 @@
 import React from 'react';
-import { RoomInfo, UserProfile } from '../types';
+import { RoomInfo, UserProfile, ChatMessage } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { PLAYER_COLORS } from '../constants';
+import { Chat } from './Chat';
 
 interface WaitingRoomProps {
     userProfile: UserProfile | null;
@@ -9,9 +10,11 @@ interface WaitingRoomProps {
     peerNicknames: Record<string, string>;
     isHost: boolean;
     currentRoom: RoomInfo | null;
-    fillAI: boolean;
-    setFillAI: (value: boolean) => void;
+    aiCount: number;
+    setAiCount: (count: number) => void;
     handleGameStart: () => void;
+    messages: ChatMessage[];
+    onSendMessage: (text: string) => void;
 }
 
 export function WaitingRoom({
@@ -20,111 +23,278 @@ export function WaitingRoom({
     peerNicknames,
     isHost,
     currentRoom,
-    fillAI,
-    setFillAI,
-    handleGameStart
+    aiCount,
+    setAiCount,
+    handleGameStart,
+    messages,
+    onSendMessage
 }: WaitingRoomProps) {
-    return (
-        <div className="absolute inset-0 flex items-center justify-center text-white bg-slate-900 z-50">
-            <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl max-w-md w-full border border-slate-700">
-                <h2 className="text-3xl font-bold mb-6 text-center text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">게임 대기실</h2>
+    const maxPlayers = currentRoom?.maxPlayers || 4;
+    const currentRealPlayers = 1 + connectedPeers.length; // Host + Guests
+    // Remaining slots logic
+    // We want to render total 'maxPlayers' slots.
+    // Slots are filled in order: Host -> Guests -> AI -> Empty
 
-                <div className="mb-6">
-                    <h3 className="text-slate-400 text-sm font-bold uppercase tracking-wider mb-3">접속한 플레이어</h3>
-                    <div className="space-y-2">
-                        {/* Host (나 or 방장) */}
-                        <div className={`flex items-center gap-4 bg-slate-900/50 p-4 rounded-xl border ${isHost ? 'border-emerald-500/30' : 'border-slate-700/50'}`}>
-                            <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center bg-slate-800 overflow-hidden" style={{ borderColor: isHost ? userProfile?.color : PLAYER_COLORS[0] }}>
-                                <PlayerAvatar playerId={1} color={isHost ? (userProfile?.color || '#fff') : PLAYER_COLORS[0]} isActive={false} avatarId={isHost ? (userProfile?.avatarId || 0) : 0} />
-                            </div>
-                            <div className="flex-1">
-                                <div className="font-bold text-lg">{isHost ? userProfile?.name : currentRoom?.hostName}</div>
-                                <div className="text-xs text-emerald-400 font-mono flex items-center gap-2">
-                                    <span className="bg-emerald-500/20 px-2 py-0.5 rounded">🎖️ HOST</span>
-                                    {isHost && <span>(나)</span>}
-                                </div>
-                            </div>
+    // However, the visual order should prob correspond to turn order (Host=1, Guest=2..).
+
+    // Slot Generators
+    const renderSlots = () => {
+        const slots = [];
+
+        // 1. Host (Owner)
+        slots.push({
+            type: 'HOST',
+            name: isHost ? userProfile?.name : currentRoom?.hostName,
+            color: isHost ? userProfile?.color : PLAYER_COLORS[0],
+            avatarId: isHost ? userProfile?.avatarId : 0,
+            isMe: isHost,
+            id: 'host'
+        });
+
+        // 2. Guests
+        connectedPeers.forEach((peerId, idx) => {
+            const isMe = !isHost && idx === 0; // Simplified assumption for guest view self-check? 
+            // Actually guest view logic: userProfile is me. connectedPeers contains OTHER guests (if fully connected mesh) or just Host connection?
+            // In typical P2P Star topology (Host is hub), Guest only sees Host. Host sees all Guests.
+            // But we pass 'connectedPeers' from App. 
+            // App logic:
+            // - Host: connectedPeers = [Guest1, Guest2...]
+            // - Guest: connectedPeers = [Host] (id=1) usually?
+            // Actually 'connectedPeers' in App is managed by useP2PConnection. 
+            // If I am Guest, I connect to Host. Host is in connectedPeers.
+            // The Waiting Room Logic in App.tsx needs to be robust for Guest view too.
+            // For now, let's trust the props passed are correct for rendering "Other Players".
+
+            // Wait, if I am Guest, userProfile is me. Host is remote.
+            // If I am Host, userProfile is me. Guests are remote.
+
+            // Let's rely on standardizing the list:
+            // We need a unified list of "Players currently in room".
+            // Since we don't have a unified list prop, we construct it.
+        });
+
+        // Re-thinking Slot Rendering to be pure UI based on Slots 1..Max
+        const renderedCards = [];
+
+        // Slot 1: Host
+        renderedCards.push(
+            <div key="slot-host" className="relative group">
+                <div className="w-full aspect-[3/4] bg-slate-800 rounded-2xl border-2 border-emerald-500/50 flex flex-col items-center justify-center p-4 shadow-lg shadow-emerald-500/10">
+                    <div className="absolute top-3 right-3 text-2xl">👑</div>
+                    <div className="w-20 h-20 rounded-full bg-slate-700 mb-4 border-2 border-white/10 flex items-center justify-center overflow-hidden">
+                        <PlayerAvatar
+                            playerId={1}
+                            color={isHost ? (userProfile?.color || '#fff') : PLAYER_COLORS[0]}
+                            avatarId={isHost ? (userProfile?.avatarId || 0) : 0}
+                            isActive={false}
+                        />
+                    </div>
+                    <div className="font-bold text-lg text-white mb-1 truncate w-full text-center">
+                        {isHost ? userProfile?.name : currentRoom?.hostName}
+                    </div>
+                    <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded font-bold">HOST</span>
+                </div>
+            </div>
+        );
+
+        // Slots 2..Max
+        // We need to fill these slots with Guests -> AI -> Empty
+        // We need to know WHO the guests are.
+        // If I am Host: Guests are in `connectedPeers`.
+        // If I am Guest: `connectedPeers` has Host usually? Or maybe simple P2P service syncs all peers?
+        // Note: current implementation might only show "connectedPeers" as list.
+        // Let's stick to the props we have.
+
+        let guestList: { name: string, color: string, avatarId: number, isMe: boolean }[] = [];
+
+        if (isHost) {
+            // I am Host (Slot 1). Guests are peers.
+            guestList = connectedPeers.map((pid, idx) => ({
+                name: peerNicknames[pid] || `Guest ${idx + 1}`,
+                color: PLAYER_COLORS[(idx + 1) % 5],
+                avatarId: (idx + 1) % 5,
+                isMe: false
+            }));
+        } else {
+            // I am Guest. 
+            // My slot is... ? We don't know our slot index easily without syncing.
+            // But we know "I" am present.
+            // And "Host" is present.
+            // Other guests? If topology is star, I might not know them unless Host broadcasts "Room State".
+            // Current P2P service broadcasts "RoomInfo" but not full player list in waiting room?
+            // Actually `ROOM_ADVERTISE` has `currentPlayers` count.
+            // `GUEST_NICKNAME` is sent to Host.
+            // We probably need a proper `RoomMember` sync. 
+            // FOR NOW: simple visualization.
+            // If I am Guest, I show Host, Myself, and maybe "Other Guest" placeholders?
+            // Let's assume for MVP: Host shows full state. Guest just shows Host + Self + placeholders.
+
+            // To make it robust:
+            // Guest View:
+            // Slot 1: Host (from currentRoom info)
+            // Slot 2: Me (userProfile)
+            // Slot 3..: Unknown (Question mark?)
+
+            guestList.push({
+                name: userProfile?.name || 'Me',
+                color: userProfile?.color || '#fff',
+                avatarId: userProfile?.avatarId || 0,
+                isMe: true
+            });
+
+            // We can't easily show other guests in Star topology without extra sync message.
+            // Let's rely on `connectedPeers` if it includes other guests (Mesh) or just ignore for now.
+        }
+
+        // Fill Guest Cards
+        guestList.forEach((guest, i) => {
+            renderedCards.push(
+                <div key={`slot-guest-${i}`} className="relative group animate-fadeIn">
+                    <div className={`w-full aspect-[3/4] bg-slate-800 rounded-2xl border-2 ${guest.isMe ? 'border-cyan-500 shadow-lg shadow-cyan-500/20' : 'border-slate-600'} flex flex-col items-center justify-center p-4`}>
+                        <div className="w-20 h-20 rounded-full bg-slate-700 mb-4 border-2 border-white/10 flex items-center justify-center overflow-hidden">
+                            <PlayerAvatar
+                                playerId={2 + i}
+                                color={guest.color}
+                                avatarId={guest.avatarId}
+                                isActive={false}
+                            />
                         </div>
+                        <div className="font-bold text-lg text-white mb-1 truncate w-full text-center">
+                            {guest.name}
+                        </div>
+                        <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-xs rounded font-bold">
+                            {guest.isMe ? 'ME' : 'GUEST'}
+                        </span>
+                    </div>
+                </div>
+            );
+        });
 
+        const usedSlots = 1 + guestList.length; // Host + Guests
+        let remainingSlots = maxPlayers - usedSlots;
 
-                        {/* Connected Peers (Guests) - 호스트 뷰 */}
-                        {isHost && connectedPeers.map((peerId, idx) => {
-                            const guestNickname = peerNicknames[peerId] || `플레이어 ${idx + 2}`;
-                            return (
-                                <div key={peerId} className="flex items-center gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
-                                    <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center bg-slate-800 overflow-hidden" style={{ borderColor: PLAYER_COLORS[(idx + 1) % 5] }}>
-                                        <PlayerAvatar playerId={idx + 2} color={PLAYER_COLORS[(idx + 1) % 5]} isActive={false} avatarId={(idx + 1) % 5} />
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="font-bold text-lg">{guestNickname}</div>
-                                        <div className="text-xs text-cyan-400 font-mono">
-                                            <span className="bg-cyan-500/20 px-2 py-0.5 rounded">GUEST</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
+        // AI Cards
+        // Only render AI cards if Host? Or sync AI count?
+        // App needs to sync AI count. For now assume passed prop implies synced or local host decision.
+        // If I am Guest, I might not see AI cards until game start unless synced.
+        // Let's assume `aiCount` is passed correctly.
 
-                        {/* 게스트 자신 표시 - 게스트 뷰 */}
-                        {!isHost && userProfile && (
-                            <div className="flex items-center gap-4 bg-slate-900/50 p-4 rounded-xl border border-cyan-500/30">
-                                <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center bg-slate-800 overflow-hidden" style={{ borderColor: userProfile.color }}>
-                                    <PlayerAvatar playerId={2} color={userProfile.color} isActive={false} avatarId={userProfile.avatarId} />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="font-bold text-lg">{userProfile.name}</div>
-                                    <div className="text-xs text-cyan-400 font-mono flex items-center gap-2">
-                                        <span className="bg-cyan-500/20 px-2 py-0.5 rounded">GUEST</span>
-                                        <span>(나)</span>
-                                    </div>
-                                </div>
+        for (let i = 0; i < aiCount && remainingSlots > 0; i++) {
+            renderedCards.push(
+                <div key={`slot-ai-${i}`}
+                    onClick={() => isHost && setAiCount(aiCount - 1)}
+                    className={`relative group animate-fadeIn ${isHost ? 'cursor-pointer hover:-translate-y-1 transition-transform' : ''}`}
+                >
+                    <div className="w-full aspect-[3/4] bg-slate-800/80 rounded-2xl border-2 border-purple-500/30 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+                        {isHost && (
+                            <div className="absolute inset-0 bg-red-500/10 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                <span className="font-bold text-red-400 text-sm">제거</span>
                             </div>
+                        )}
+                        <div className="text-4xl mb-4">🤖</div>
+                        <div className="font-bold text-lg text-purple-200 mb-1">AI 봇</div>
+                        <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs rounded font-bold">COMPUTER</span>
+                    </div>
+                </div>
+            );
+            remainingSlots--;
+        }
+
+        // Empty Cards
+        for (let i = 0; i < remainingSlots; i++) {
+            renderedCards.push(
+                <div key={`slot-empty-${i}`}
+                    onClick={() => isHost && setAiCount(aiCount + 1)}
+                    className={`relative group ${isHost ? 'cursor-pointer' : 'cursor-default'}`}
+                >
+                    <div className="w-full aspect-[3/4] bg-slate-800/30 rounded-2xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center p-4 hover:bg-slate-800/50 transition-colors">
+                        {isHost ? (
+                            <>
+                                <div className="w-12 h-12 rounded-full bg-slate-700/50 flex items-center justify-center mb-2 text-slate-500 group-hover:text-emerald-400 group-hover:scale-110 transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                    </svg>
+                                </div>
+                                <span className="text-sm font-bold text-slate-500 group-hover:text-emerald-400">AI 추가</span>
+                            </>
+                        ) : (
+                            <span className="text-slate-600 text-sm font-bold">빈 슬롯</span>
                         )}
                     </div>
                 </div>
+            );
+        }
 
-                {isHost ? (
-                    <div className="flex flex-col gap-4">
-                        <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
-                            <div className="flex justify-between text-slate-300 text-sm mb-2">
-                                <span>현재 접속 인원</span>
-                                <span className="font-bold text-white">{1 + connectedPeers.length} 명 / {currentRoom?.maxPlayers || 4} 명</span>
-                            </div>
-                            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                                <div className="h-full bg-emerald-500" style={{ width: `${((1 + connectedPeers.length) / (currentRoom?.maxPlayers || 4)) * 100}%` }}></div>
-                            </div>
-                        </div>
+        return renderedCards;
+    };
 
-                        <label className="flex items-center gap-3 p-3 bg-slate-800/80 rounded-xl cursor-pointer hover:bg-slate-800 transition-colors">
-                            <input
-                                type="checkbox"
-                                checked={fillAI}
-                                onChange={e => setFillAI(e.target.checked)}
-                                className="w-5 h-5 rounded border-slate-600 text-emerald-500 focus:ring-emerald-500 bg-slate-900"
-                            />
-                            <div className="flex flex-col text-left">
-                                <span className="text-white font-bold text-sm">빈 자리 AI로 채우기</span>
-                                <span className="text-slate-400 text-xs">부족한 인원을 AI 플레이어로 대체합니다.</span>
-                            </div>
-                        </label>
+    return (
+        <div className="absolute inset-0 flex flex-col text-white bg-slate-900 z-50 font-sans">
+            {/* Header */}
+            <div className="p-6 bg-slate-900/90 backdrop-blur-md border-b border-white/5 flex justify-between items-center shadow-md z-10">
+                <div>
+                    <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tight">
+                        {currentRoom?.name || '게임 대기실'}
+                    </h2>
+                    <p className="text-slate-400 text-xs mt-1 flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-slate-800 rounded text-slate-300 font-mono text-[10px] border border-slate-700">ID: {currentRoom?.id}</span>
+                    </p>
+                </div>
 
-                        <button
-                            onClick={handleGameStart}
-                            className="w-full py-4 bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
-                        >
-                            <span className="text-2xl">🚀</span>
-                            게임 시작 ({fillAI ? currentRoom?.maxPlayers : Math.max(2, 1 + connectedPeers.length)}인)
-                        </button>
-                    </div>
-                ) : (
-                    <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-700/50 text-center">
-                        <div className="flex flex-col items-center gap-4">
-                            <div className="animate-spin w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full"></div>
-                            <p className="text-slate-300 font-bold">방장이 게임을 시작하기를<br />기다리고 있습니다...</p>
-                        </div>
+                {isHost && (
+                    <button
+                        onClick={handleGameStart}
+                        className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center gap-2 animate-bounce-subtle"
+                    >
+                        <span className="text-xl">🚀</span>
+                        게임 시작
+                    </button>
+                )}
+                {!isHost && (
+                    <div className="px-6 py-2 bg-slate-800/50 rounded-xl border border-white/5 animate-pulse">
+                        <span className="text-emerald-400 text-sm font-bold">방장이 곧 게임을 시작합니다...</span>
                     </div>
                 )}
+            </div>
+
+            {/* Main Content: Split View */}
+            <div className="flex-1 flex overflow-hidden">
+                {/* Visual Room Area (Top/Left) */}
+                <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed">
+                    <div className="w-full max-w-5xl">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                            {renderSlots()}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Chat Area (Right Side or Bottom? User asked for bottom in prompt "하단에는 채팅영역이 존재". 
+                   But vertical split might be better for wide screens. 
+                   Let's stick to user request: "하단에는 채팅영역이 존재" 
+                   Wait, "대기실에서는 카드형태... 하단에는 채팅영역". 
+                   Okay, I will put chat at the bottom to follow instructions strictly. 
+                */}
+            </div>
+
+            {/* Chat Area (Bottom Fixed) */}
+            <div className="h-64 bg-slate-900 border-t border-white/10 flex flex-col shadow-[0_-10px_50px_rgba(0,0,0,0.5)] z-20">
+                <div className="px-6 py-2 bg-slate-800/80 border-b border-white/5 flex items-center justify-between backdrop-blur-sm">
+                    <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                        <span className="text-xs font-bold text-slate-300 uppercase tracking-widest">Room Chat</span>
+                    </div>
+                </div>
+                <div className="flex-1 relative">
+                    <Chat
+                        messages={messages}
+                        onSendMessage={onSendMessage}
+                        currentPlayerId={isHost ? 1 : (userProfile?.avatarId || 99)}
+                        currentPlayerName={userProfile?.name || 'Me'}
+                    />
+                </div>
             </div>
         </div>
     );
 }
+
+// Add simple CSS animation for fadeIn if needed, or rely on Tailwind utility usage

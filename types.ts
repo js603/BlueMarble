@@ -97,10 +97,11 @@ export interface RoomInfo {
   password?: string; // Only used for Join Request verification, not broadcasted
   status: 'WAITING' | 'PLAYING';
   lastUpdated: number;
+  aiCount: number; // For sync
 }
 
 export interface P2PMessage {
-  type: 'STATE_SYNC' | 'CHAT' | 'JOIN_REQ' | 'START_GAME' | 'ROOM_ADVERTISE' | 'ROOM_REQUEST' | 'GUEST_NICKNAME' | 'PLAYER_ID_ASSIGN' | 'HOST_MIGRATION' | 'PLAYER_ACTION';
+  type: 'STATE_SYNC' | 'CHAT' | 'JOIN_REQ' | 'START_GAME' | 'ROOM_ADVERTISE' | 'ROOM_REQUEST' | 'GUEST_NICKNAME' | 'PLAYER_ID_ASSIGN' | 'HOST_MIGRATION' | 'PLAYER_ACTION' | 'LOBBY_CHAT' | 'ROOM_UPDATE';
   payload: any;
 }
 

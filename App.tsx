@@ -14,6 +14,8 @@ import { AI_UX_DELAYS, ANIMATION_DELAYS } from './constants/aiDelays';
 import {
   broadcastGameState,
   broadcastGameChat,
+  broadcastLobbyChat,
+  sendGameMessage, // Import sendGameMessage
   advertiseRoom,
   joinLobby,
   leaveLobby
@@ -57,7 +59,10 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
-  const [fillAI, setFillAI] = useState(true);
+
+  // New States for UI Enhancements
+  const [aiCount, setAiCount] = useState(0); // Default 0
+  const [lobbyMessages, setLobbyMessages] = useState<ChatMessage[]>([]);
 
   // 2. Core Game State
   const [gameState, setGameStateInternal] = useState<GameState>(createInitialState());
@@ -161,17 +166,22 @@ export default function App() {
   // 9. Global Lobby Connection
   useEffect(() => {
     if (showIntro) return;
-    joinLobby((info: RoomInfo) => {
-      setRooms(prev => {
-        const existingIdx = prev.findIndex(r => r.id === info.id);
-        if (existingIdx !== -1) {
-          const newRooms = [...prev];
-          newRooms[existingIdx] = { ...info, lastUpdated: Date.now() };
-          return newRooms;
-        }
-        return [...prev, { ...info, lastUpdated: Date.now() }];
-      });
-    });
+    joinLobby(
+      (info: RoomInfo) => { // onRoomListUpdate
+        setRooms(prev => {
+          const existingIdx = prev.findIndex(r => r.id === info.id);
+          if (existingIdx !== -1) {
+            const newRooms = [...prev];
+            newRooms[existingIdx] = { ...info, lastUpdated: Date.now() };
+            return newRooms;
+          }
+          return [...prev, { ...info, lastUpdated: Date.now() }];
+        });
+      },
+      (msg: ChatMessage) => { // onLobbyMessage
+        setLobbyMessages(prev => [...prev, msg]);
+      }
+    );
     return () => leaveLobby();
   }, [showIntro]);
 
@@ -189,7 +199,9 @@ export default function App() {
 
     const maxPlayers = currentRoom.maxPlayers;
     const connectedPlayerCount = 1 + connectedPeers.length;
-    const targetTotal = fillAI ? maxPlayers : Math.max(2, connectedPlayerCount);
+    // const targetTotal = fillAI ? maxPlayers : Math.max(2, connectedPlayerCount);
+    // Updated Logic: Use aiCount
+    const aiNeeded = aiCount;
 
     const players: Player[] = [];
     const aiNames = ['알파고', '왓슨', '자비스', '스카이넷', 'HAL9000'];
@@ -212,12 +224,24 @@ export default function App() {
     });
 
     // AI
-    while (players.length < targetTotal) {
-      const i = players.length;
+    for (let i = 0; i < aiNeeded; i++) {
+      if (players.length >= maxPlayers) break;
+      const aiName = aiNames[i % aiNames.length];
+
+      // Find next available color index
+      const colorIdx = players.length % 5;
+
       players.push({
-        id: i + 1, name: aiNames[(i - realPlayerCount) % aiNames.length], money: INITIAL_MONEY,
-        position: 0, color: PLAYER_COLORS[i % 5], avatarId: i % 5,
-        isBankrupt: false, isTrapped: 0, isComputer: true, hasEscapeCard: false
+        id: players.length + 1,
+        name: aiName,
+        money: INITIAL_MONEY,
+        position: 0,
+        color: PLAYER_COLORS[colorIdx],
+        avatarId: colorIdx,
+        isBankrupt: false,
+        isTrapped: 0,
+        isComputer: true,
+        hasEscapeCard: false
       });
     }
 
@@ -231,6 +255,45 @@ export default function App() {
     updateStateAndBroadcast(newState);
     setTimeout(() => broadcastGameState(newState), 100);
   };
+
+  // 10.4 Guest AI Count Sync
+  useEffect(() => {
+    if (!isHost && currentRoom && currentRoom.aiCount !== undefined) {
+      setAiCount(currentRoom.aiCount);
+    }
+  }, [isHost, currentRoom]);
+
+  // 10.5 AI Count Sync (Host -> Guests)
+  useEffect(() => {
+    if (!isHost || !currentRoom) return;
+
+    // Only broadcast if we are in LOBBY (Waiting Room)
+    if (gameState.gameStatus === 'LOBBY') {
+      const updatedRoom: RoomInfo = {
+        ...currentRoom,
+        aiCount: aiCount,
+        lastUpdated: Date.now()
+      };
+      // Update local state implicitly? No, currentRoom state in App depends on useP2PConnection.
+      // We need to update currentRoom in useP2PConnection too.
+      setCurrentRoom(updatedRoom);
+
+      // Broadcast to peers in room
+      sendGameMessage({
+        type: 'ROOM_UPDATE',
+        payload: updatedRoom
+      });
+
+      // Also update Lobby Advertisement (so new joiners see it? Actually currentPlayers vs Max is what matters there)
+      advertiseRoom(updatedRoom);
+    }
+  }, [aiCount, isHost, gameState.gameStatus]); // Removing currentRoom from dependency to avoid loop if setCurrentRoom triggers effect?
+  // Actually if we update currentRoom, it might trigger this effect again.
+  // We should be careful. 
+  // Dependency: `aiCount`. When `aiCount` changes, we update room and broadcast.
+  // `currentRoom` is needed for spread.
+  // Ideally `setAiCount` update should trigger this. 
+  // Let's rely on `aiCount` change.
 
   // 11. Orchestration Effects (AI, Modal, Pending Arrival)
   useEffect(() => {
@@ -418,7 +481,24 @@ export default function App() {
 
       {showIntro && <IntroModal onComplete={handleProfileComplete} />}
       {showLobby && userProfile && (
-        <Lobby userProfile={userProfile} onJoinRoom={handleJoinOrCreateRoom} rooms={rooms} />
+        <Lobby
+          userProfile={userProfile}
+          onJoinRoom={handleJoinOrCreateRoom}
+          rooms={rooms}
+          messages={lobbyMessages}
+          onSendMessage={(text) => {
+            const msg: ChatMessage = {
+              id: Date.now().toString() + Math.random(),
+              senderId: 'SYSTEM',
+              senderName: userProfile.name,
+              text,
+              timestamp: Date.now(),
+              avatarId: userProfile.avatarId
+            };
+            setLobbyMessages(prev => [...prev, msg]);
+            broadcastLobbyChat(msg);
+          }}
+        />
       )}
 
       {gameState.modal && (
@@ -433,9 +513,11 @@ export default function App() {
           peerNicknames={peerNicknames}
           isHost={isHost}
           currentRoom={currentRoom}
-          fillAI={fillAI}
-          setFillAI={setFillAI}
+          aiCount={aiCount}
+          setAiCount={setAiCount}
           handleGameStart={handleGameStart}
+          messages={chatMessages}
+          onSendMessage={(text) => addChatMessage(gameState.myPlayerId || 1, userProfile?.name || '나', text, userProfile?.avatarId)}
         />
       )}
 
@@ -473,7 +555,8 @@ export default function App() {
                   <Chat
                     messages={chatMessages}
                     onSendMessage={(text) => addChatMessage(gameState.myPlayerId || 1, userProfile?.name || '나', text, userProfile?.avatarId)}
-                    currentUserId={gameState.myPlayerId || 1}
+                    currentPlayerId={gameState.myPlayerId || 1}
+                    currentPlayerName={userProfile?.name || '나'}
                   />
                 </div>
               </div>
