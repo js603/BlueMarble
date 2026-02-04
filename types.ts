@@ -60,6 +60,7 @@ export interface GameState {
   consecutiveDoubles: number; // Track doubles
   modal: ModalState | null; // Current active modal
   pendingArrivalId: number | null; // Player ID waiting for arrival processing (e.g., after Golden Key move)
+  pendingMoveSteps: number; // Number of steps to move after dice animation completes
   outstandingDebt: number; // Amount needed to proceed
   creditorId: number | null; // Who needs to be paid (null for bank)
 
