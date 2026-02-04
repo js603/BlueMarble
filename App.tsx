@@ -234,16 +234,20 @@ export default function App() {
 
   // 11. Orchestration Effects (AI, Modal, Pending Arrival)
   useEffect(() => {
-    const s = gameState;
+    if (gameState.outstandingDebt <= 0) return;
+
+    // 현재 턴 플레이어 정보는 Ref에서 가져옴
+    const s = gameStateRef.current;
     const p = s.players[s.currentPlayerIndex];
     if (!p) return;
-    if (s.outstandingDebt > 0 && p.money >= s.outstandingDebt) {
+
+    if (p.money >= s.outstandingDebt) {
       const timer = setTimeout(() => {
         gameLogic.handlePayment(s.outstandingDebt, s.creditorId, '빚');
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [gameState.players, gameState.outstandingDebt, gameLogic]);
+  }, [gameState.outstandingDebt, gameState.currentPlayerIndex, gameLogic.handlePayment]);
 
   useEffect(() => {
     if (!gameState.modal && gameState.pendingArrivalId !== null) {
@@ -256,112 +260,136 @@ export default function App() {
 
   // 주사위 애니메이션 완료 후 이동 처리 (상태 기반)
   useEffect(() => {
-    if (gameState.isRolling) {
-      // 주사위 애니메이션 시간 (UX용 지연)
-      const timer = setTimeout(() => {
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-        const moveSteps = gameState.pendingMoveSteps;
+    if (!gameState.isRolling) return;
 
-        setGameStateInternal(prev => ({
-          ...prev,
-          isRolling: false,
-          pendingMoveSteps: 0,
-          waitingForNextTurn: moveSteps === 0
-        }));
+    // 주사위 애니메이션 시간 (UX용 지연)
+    const timer = setTimeout(() => {
+      // 최신 상태를 ref에서 가져옴 (의존성 문제 방지)
+      const currentState = gameStateRef.current;
+      const currentPlayer = currentState.players[currentState.currentPlayerIndex];
+      const moveSteps = currentState.pendingMoveSteps;
 
-        // 이동할 칸이 있으면 이동 시작
-        if (moveSteps > 0 && currentPlayer) {
-          gameLogic.movePlayerStepByStep(currentPlayer.id, moveSteps);
-        }
-      }, 1000); // ANIMATION_DELAYS.DICE_ROLL
+      setGameStateInternal(prev => ({
+        ...prev,
+        isRolling: false,
+        pendingMoveSteps: 0,
+        waitingForNextTurn: moveSteps === 0
+      }));
 
-      return () => clearTimeout(timer);
-    }
-  }, [gameState.isRolling, gameState.pendingMoveSteps, gameState.players, gameState.currentPlayerIndex, gameLogic]);
+      // 이동할 칸이 있으면 이동 시작
+      if (moveSteps > 0 && currentPlayer) {
+        gameLogic.movePlayerStepByStep(currentPlayer.id, moveSteps);
+      }
+    }, ANIMATION_DELAYS.DICE_ROLL);
+
+    return () => clearTimeout(timer);
+  }, [gameState.isRolling, gameLogic.movePlayerStepByStep]);
 
   // AI Effects (Only Host runs AI)
   useEffect(() => {
     if (!isHost) return;
+
+    // AI 차례인지 확인 (트리거 상태 체크)
     const s = gameState;
     const p = s.players[s.currentPlayerIndex];
-    if (!p) return;
+    if (!p || !p.isComputer) return;
 
-    // AI 차례이고, 주사위를 굴릴 수 있는 상태일 때
-    if (s.gameStatus === 'PLAYING' && p.isComputer && !s.isRolling && !s.isMoving && !s.waitingForNextTurn && !s.modal && !s.isSelectingMoveTarget && !s.pendingArrivalId && s.outstandingDebt === 0) {
+    if (s.gameStatus === 'PLAYING' && !s.isRolling && !s.isMoving && !s.waitingForNextTurn && !s.modal && !s.isSelectingMoveTarget && !s.pendingArrivalId && s.outstandingDebt === 0) {
       console.log('[AI] Ready to roll dice for:', p.name);
       const timer = setTimeout(() => {
-        console.log('[AI] Rolling dice for:', p.name);
-        gameLogic.handleRollDice();
+        // 실행 시점에 다시 한 번 최신 상태 확인
+        const currentS = gameStateRef.current;
+        const currentP = currentS.players[currentS.currentPlayerIndex];
+        if (currentP?.isComputer && !currentS.isRolling && !currentS.isMoving && !currentS.waitingForNextTurn) {
+          console.log('[AI] Rolling dice for:', currentP.name);
+          gameLogic.handleRollDice();
+        }
       }, AI_UX_DELAYS.BEFORE_ROLL_DICE);
       return () => clearTimeout(timer);
     }
-  }, [gameState.currentPlayerIndex, gameState.players, gameState.isRolling, gameState.isMoving, gameState.waitingForNextTurn, gameState.modal, gameState.gameStatus, gameState.isSelectingMoveTarget, gameState.pendingArrivalId, gameState.outstandingDebt, isHost, gameLogic.handleRollDice]);
+  }, [gameState.currentPlayerIndex, gameState.isRolling, gameState.isMoving, gameState.waitingForNextTurn, gameState.modal, gameState.gameStatus, gameState.isSelectingMoveTarget, gameState.pendingArrivalId, gameState.outstandingDebt, isHost, gameLogic.handleRollDice]);
 
   useEffect(() => {
-    if (!isHost) return;
-    const s = gameState;
-    if (s.gameStatus === 'PLAYING' && s.modal && s.modal.isComputerAction) {
-      console.log('[AI] Modal action for computer, type:', s.modal.type);
-      const timer = setTimeout(() => {
-        let decision = true;
-        const cost = s.modal?.cost || 0;
-        const currentPlayer = s.players[s.currentPlayerIndex];
-        if (s.modal?.type === 'BUY' && (currentPlayer?.money || 0) < cost) decision = false;
-        else if (s.modal?.type === 'TAKEOVER' && (currentPlayer?.money || 0) < cost + 300) decision = false;
-        console.log('[AI] Making modal decision:', decision);
-        gameLogic.handleModalActionWithLogic(decision);
-      }, AI_UX_DELAYS.BEFORE_MODAL_DECISION);
-      return () => clearTimeout(timer);
-    }
-  }, [gameState.modal, gameState.players, gameState.currentPlayerIndex, isHost, gameLogic.handleModalActionWithLogic]);
+    if (!isHost || !gameState.modal?.isComputerAction) return;
+
+    console.log('[AI] Modal action for computer, type:', gameState.modal.type);
+    const timer = setTimeout(() => {
+      // 최신 상태 참조
+      const s = gameStateRef.current;
+      if (!s.modal || !s.modal.isComputerAction) return;
+
+      let decision = true;
+      const cost = s.modal?.cost || 0;
+      const currentPlayer = s.players[s.currentPlayerIndex];
+
+      if (s.modal?.type === 'BUY' && (currentPlayer?.money || 0) < cost) decision = false;
+      else if (s.modal?.type === 'TAKEOVER' && (currentPlayer?.money || 0) < cost + 300) decision = false;
+
+      console.log('[AI] Making modal decision:', decision);
+      gameLogic.handleModalActionWithLogic(decision);
+    }, AI_UX_DELAYS.BEFORE_MODAL_DECISION);
+    return () => clearTimeout(timer);
+  }, [gameState.modal, gameState.currentPlayerIndex, isHost, gameLogic.handleModalActionWithLogic]);
 
   useEffect(() => {
-    if (!isHost) return;
-    const s = gameState;
-    const p = s.players[s.currentPlayerIndex];
-    if (s.gameStatus === 'PLAYING' && s.isSelectingMoveTarget && p?.isComputer) {
-      console.log('[AI] Selecting teleport target for:', p.name);
-      const timer = setTimeout(() => {
-        const availableCities = s.board.filter(c => c.type === CellType.CITY);
-        const target = availableCities[Math.floor(Math.random() * availableCities.length)];
-        console.log('[AI] Teleporting to:', target.name);
-        gameLogic.handleTeleport(target.id);
-      }, AI_UX_DELAYS.BEFORE_TELEPORT);
-      return () => clearTimeout(timer);
-    }
-  }, [gameState.isSelectingMoveTarget, gameState.players, gameState.currentPlayerIndex, isHost, gameLogic.handleTeleport]);
+    if (!isHost || !gameState.isSelectingMoveTarget) return;
 
-  useEffect(() => {
-    if (!isHost) return;
     const s = gameState;
     const p = s.players[s.currentPlayerIndex];
-    if (!p) return;
-    if (s.gameStatus === 'PLAYING' && s.waitingForNextTurn && p.isComputer && !s.modal && !s.isSelectingMoveTarget && !s.pendingArrivalId && s.outstandingDebt === 0) {
+    if (!p?.isComputer) return;
+
+    console.log('[AI] Selecting teleport target for:', p.name);
+    const timer = setTimeout(() => {
+      // 최신 보드 상태 확인
+      const currentS = gameStateRef.current;
+      const availableCities = currentS.board.filter(c => c.type === CellType.CITY);
+      const target = availableCities[Math.floor(Math.random() * availableCities.length)];
+      console.log('[AI] Teleporting to:', target.name);
+      gameLogic.handleTeleport(target.id);
+    }, AI_UX_DELAYS.BEFORE_TELEPORT);
+    return () => clearTimeout(timer);
+  }, [gameState.isSelectingMoveTarget, gameState.currentPlayerIndex, isHost, gameLogic.handleTeleport]);
+
+  useEffect(() => {
+    if (!isHost || !gameState.waitingForNextTurn) return;
+
+    const s = gameState;
+    const p = s.players[s.currentPlayerIndex];
+    if (!p || !p.isComputer) return;
+
+    if (s.gameStatus === 'PLAYING' && !s.modal && !s.isSelectingMoveTarget && !s.pendingArrivalId && s.outstandingDebt === 0) {
       console.log('[AI] Waiting to end turn for:', p.name);
       const timer = setTimeout(() => {
-        console.log('[AI] Ending turn for:', p.name);
-        gameLogic.nextTurn();
+        // 최신 상태 재확인
+        const currentS = gameStateRef.current;
+        if (currentS.waitingForNextTurn && currentS.players[currentS.currentPlayerIndex]?.isComputer) {
+          console.log('[AI] Ending turn for:', p.name);
+          gameLogic.nextTurn();
+        }
       }, AI_UX_DELAYS.BEFORE_NEXT_TURN);
       return () => clearTimeout(timer);
     }
-  }, [gameState.waitingForNextTurn, gameState.players, gameState.currentPlayerIndex, gameState.modal, gameState.isSelectingMoveTarget, gameState.pendingArrivalId, gameState.outstandingDebt, isHost, gameLogic.nextTurn]);
+  }, [gameState.waitingForNextTurn, gameState.currentPlayerIndex, gameState.modal, gameState.isSelectingMoveTarget, gameState.pendingArrivalId, gameState.outstandingDebt, isHost, gameLogic.nextTurn]);
 
   useEffect(() => {
-    if (!isHost) return;
+    if (!isHost || gameState.outstandingDebt <= 0 || gameState.modal) return;
+
     const s = gameState;
     const p = s.players[s.currentPlayerIndex];
-    if (s.gameStatus === 'PLAYING' && s.outstandingDebt > 0 && p?.isComputer && !s.modal) {
-      const timer = setTimeout(() => {
-        const ownedCells = s.board.filter(c => c.ownerId === p.id);
-        if (ownedCells.length > 0) {
-          ownedCells.sort((a, b) => gameLogic.calculateSellPrice(b) - gameLogic.calculateSellPrice(a));
-          const target = ownedCells[0];
-          gameLogic.sellLand(s.board.findIndex(c => c.id === target.id), gameLogic.calculateSellPrice(target));
-        }
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [gameState.outstandingDebt, gameState.modal, isHost, gameLogic]);
+    if (!p?.isComputer) return;
+
+    const timer = setTimeout(() => {
+      const currentS = gameStateRef.current;
+      const currentP = currentS.players[currentS.currentPlayerIndex];
+      const ownedCells = currentS.board.filter(c => c.ownerId === currentP.id);
+      if (ownedCells.length > 0) {
+        ownedCells.sort((a, b) => gameLogic.calculateSellPrice(b) - gameLogic.calculateSellPrice(a));
+        const target = ownedCells[0];
+        gameLogic.sellLand(currentS.board.findIndex(c => c.id === target.id), gameLogic.calculateSellPrice(target));
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [gameState.outstandingDebt, gameState.modal, gameState.currentPlayerIndex, isHost, gameLogic.sellLand, gameLogic.calculateSellPrice]);
 
   // 12. Render
   return (

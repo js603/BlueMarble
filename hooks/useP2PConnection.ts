@@ -28,7 +28,7 @@ export function useP2PConnection({
     const [currentRoom, setCurrentRoom] = useState<RoomInfo | null>(null);
     const [connectedPeers, setConnectedPeers] = useState<string[]>([]); // Connected Peer ID list
     const [peerNicknames, setPeerNicknames] = useState<Record<string, string>>({}); // peerId -> nickname
-    const [peerPlayerIds, setPeerPlayerIds] = useState<Record<string, number>>({}); // peerId -> playerId
+    const peerPlayerIdsRef = useRef<Record<string, number>>({}); // peerId -> playerId (Ref for stable callbacks)
 
     const roomRef = useRef<any>(null); // Type returned from joinGameRoom
 
@@ -135,12 +135,12 @@ export function useP2PConnection({
                 waitForPeerConnection(peerId).then((connected) => {
                     if (connected) {
                         // Calculate next available Player ID
-                        const existingIds = Object.values(peerPlayerIds);
+                        const existingIds = Object.values(peerPlayerIdsRef.current);
                         let nextId = 2;
                         while (existingIds.includes(nextId)) {
                             nextId++;
                         }
-                        setPeerPlayerIds(prev => ({ ...prev, [peerId]: nextId }));
+                        peerPlayerIdsRef.current[peerId] = nextId;
                         sendGameMessage({ type: 'PLAYER_ID_ASSIGN', payload: nextId });
                     }
                 });
@@ -161,16 +161,12 @@ export function useP2PConnection({
                 delete updated[peerId];
                 return updated;
             });
-            setPeerPlayerIds(prev => {
-                const updated = { ...prev };
-                delete updated[peerId];
-                return updated;
-            });
+            delete peerPlayerIdsRef.current[peerId];
 
             // Host Migration
             if (!isHostMode) {
                 const myId = gameStateRef.current.myPlayerId;
-                const remainingPeerIds: number[] = Object.entries(peerPlayerIds)
+                const remainingPeerIds: number[] = Object.entries(peerPlayerIdsRef.current)
                     .filter(([pid]) => pid !== peerId)
                     .map(([, playerId]) => playerId as number);
 
@@ -192,7 +188,7 @@ export function useP2PConnection({
         if (isHostMode) {
             setGameStateInternal(prev => ({ ...prev, myPlayerId: 1 }));
         }
-    }, [userProfile, gameStateRef, setGameStateInternal, setChatMessages, setShowLobby, peerPlayerIds]);
+    }, [userProfile, gameStateRef, setGameStateInternal, setChatMessages, setShowLobby]);
 
     return {
         isHost,
@@ -201,7 +197,7 @@ export function useP2PConnection({
         setCurrentRoom,
         connectedPeers,
         peerNicknames,
-        peerPlayerIds,
+        peerPlayerIds: peerPlayerIdsRef.current,
         handleJoinOrCreateRoom
     };
 }
