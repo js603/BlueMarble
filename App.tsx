@@ -298,6 +298,45 @@ export default function App() {
         if (gameStateRef.current.myPlayerId !== newHostPlayerId) {
           setIsHost(false);
         }
+      } else if (msg.type === 'PLAYER_ACTION' && isHostMode) {
+        // Host receives action from Guest
+        const { action, playerId } = msg.payload;
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Host] Received PLAYER_ACTION:', action, 'from Player:', playerId);
+        }
+
+        // Verify the action is from the correct player (whose turn it is)
+        const currentPlayer = gameStateRef.current.players[gameStateRef.current.currentPlayerIndex];
+        if (currentPlayer && currentPlayer.id === playerId) {
+          if (action === 'NEXT_TURN') {
+            // Process next turn on Host side
+            setGameState(prev => {
+              let nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
+              let loopGuard = 0;
+              while (prev.players[nextIndex].isBankrupt && loopGuard < prev.players.length) {
+                nextIndex = (nextIndex + 1) % prev.players.length;
+                loopGuard++;
+              }
+              const active = prev.players.filter(p => !p.isBankrupt);
+              if (active.length === 1) return { ...prev, gameStatus: 'ENDED', winner: active[0].id };
+              return {
+                ...prev,
+                currentPlayerIndex: nextIndex,
+                turnCount: prev.turnCount + 1,
+                consecutiveDoubles: 0,
+                waitingForNextTurn: false,
+                isRolling: false,
+                isMoving: false,
+                isSelectingMoveTarget: false,
+                modal: null,
+                pendingArrivalId: null,
+                outstandingDebt: 0
+              };
+            });
+          }
+        } else {
+          console.warn('[Host] Ignoring PLAYER_ACTION - not from current player');
+        }
       }
     }, (peerId) => {
       if (process.env.NODE_ENV === 'development') {
@@ -898,6 +937,23 @@ export default function App() {
     const s = gameStateRef.current;
     if (!s.players[s.currentPlayerIndex]) return;
 
+    // Guest: Send action to Host instead of modifying state directly
+    if (!isHost && s.isMultiplayer) {
+      const myId = s.myPlayerId;
+      const currentPlayer = s.players[s.currentPlayerIndex];
+      if (currentPlayer && currentPlayer.id === myId) {
+        sendGameMessage({
+          type: 'PLAYER_ACTION',
+          payload: { action: 'NEXT_TURN', playerId: myId }
+        });
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Guest] Sent NEXT_TURN action to Host');
+        }
+        return; // Don't modify local state - Host will broadcast new state
+      }
+    }
+
+    // Host: Modify state directly
     setGameState(prev => {
       let nextIndex = prev.currentPlayerIndex;
       let nextTurnCount = prev.turnCount;
@@ -919,7 +975,7 @@ export default function App() {
       if (active.length === 1) return { ...prev, gameStatus: 'ENDED', winner: active[0].id };
       return { ...prev, currentPlayerIndex: nextIndex, turnCount: nextTurnCount, consecutiveDoubles: nextDoubles, waitingForNextTurn: false, isRolling: false, isMoving: false, isSelectingMoveTarget: false, modal: null, pendingArrivalId: null, outstandingDebt: 0 };
     });
-  }, [addChatMessage, setGameState]);
+  }, [addChatMessage, setGameState, isHost]);
 
   const handleModalAction = (confirmed: boolean) => {
     setGameState(prev => {
@@ -1047,7 +1103,8 @@ export default function App() {
       const timer = setTimeout(() => {
         let decision = true;
         const cost = s.modal?.cost || 0;
-        const currentMoney = s.players.find(p => p.isComputer)?.money || 0;
+        const currentPlayer = s.players[s.currentPlayerIndex];
+        const currentMoney = currentPlayer?.money || 0;
         if (s.modal?.type === 'BUY' && currentMoney < cost) decision = false;
         else if (s.modal?.type === 'TAKEOVER' && currentMoney < cost + 300) decision = false;
         handleModalActionWithLogic(decision);
@@ -1306,15 +1363,19 @@ export default function App() {
                 const canSelectTarget = currentPlayer && gameState.isSelectingMoveTarget && !currentPlayer.isComputer;
                 const isSellable = currentPlayer && gameState.outstandingDebt > 0 && cell.ownerId === currentPlayer.id;
 
+                const cellOwner = cell.ownerId ? gameState.players.find(p => p.id === cell.ownerId) : null;
+                const ownerBorderStyle = cellOwner ? { borderColor: cellOwner.color, borderWidth: '3px' } : {};
+
                 return (
                   <div
                     key={cell.id}
-                    style={{ gridArea }}
+                    style={{ gridArea, ...ownerBorderStyle }}
                     onClick={() => handleCellClick(idx)}
                     className={`
                                     relative rounded-md sm:rounded-lg overflow-hidden border transition-all active:scale-95
                                     flex flex-col items-center justify-between p-0.5
-                                    ${cell.type !== CellType.CITY ? 'bg-slate-800 border-slate-700' : 'bg-slate-800/60 border-slate-700/50'}
+                                    ${cell.type !== CellType.CITY ? 'bg-slate-800 border-slate-700' : (cellOwner ? '' : 'bg-slate-800/60 border-slate-700/50')}
+                                    ${cellOwner ? 'bg-opacity-30' : ''}
                                     ${currentPlayer?.position === idx ? 'ring-2 ring-yellow-400 z-10 shadow-lg shadow-yellow-400/20' : ''}
                                     ${canSelectTarget ? 'animate-pulse ring-2 ring-purple-500 bg-purple-500/20 z-20 cursor-pointer' : ''}
                                     ${isSellable ? 'animate-pulse ring-2 ring-red-500 bg-red-500/20 z-20 cursor-pointer' : ''}
@@ -1331,8 +1392,11 @@ export default function App() {
                             </div>
                           )}
                         </div>
-                        <div className="w-full bg-black/20 text-center rounded-sm text-[7px] sm:text-[9px] text-slate-400 font-mono">
-                          {cell.ownerId ? 'OWNED' : `₩${(cell.price / 10000).toFixed(0)}`}
+                        <div
+                          className={`w-full text-center rounded-sm text-[7px] sm:text-[9px] font-mono ${cellOwner ? 'font-bold' : 'bg-black/20 text-slate-400'}`}
+                          style={cellOwner ? { backgroundColor: cellOwner.color + '40', color: cellOwner.color } : {}}
+                        >
+                          {cellOwner ? cellOwner.name.substring(0, 3) : `₩${cell.price}`}
                         </div>
                       </>
                     ) : renderSpecialCell(cell)}
