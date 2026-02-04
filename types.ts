@@ -99,7 +99,7 @@ export interface RoomInfo {
 }
 
 export interface P2PMessage {
-  type: 'STATE_SYNC' | 'CHAT' | 'JOIN_REQ' | 'START_GAME' | 'ROOM_ADVERTISE' | 'ROOM_REQUEST' | 'GUEST_NICKNAME';
+  type: 'STATE_SYNC' | 'CHAT' | 'JOIN_REQ' | 'START_GAME' | 'ROOM_ADVERTISE' | 'ROOM_REQUEST' | 'GUEST_NICKNAME' | 'PLAYER_ID_ASSIGN' | 'HOST_MIGRATION';
   payload: any;
 }
 

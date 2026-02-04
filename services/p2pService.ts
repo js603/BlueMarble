@@ -123,13 +123,22 @@ export const leaveGameRoom = () => {
   }
 };
 
+// ✅ Medium Fix #8: Add error handling to state broadcasting
 export const broadcastGameState = (state: GameState) => {
-  if (gameActions) {
+  try {
+    if (!gameActions) {
+      console.warn('[P2P] Cannot broadcast state: not in a game room');
+      return false;
+    }
     const msg: P2PMessage = {
       type: 'STATE_SYNC',
       payload: state
     };
     gameActions.send(msg);
+    return true;
+  } catch (error) {
+    console.error('[P2P] Error broadcasting game state:', error);
+    return false;
   }
 };
 
@@ -143,9 +152,18 @@ export const broadcastGameChat = (chatMsg: ChatMessage) => {
   }
 };
 
+// ✅ Medium Fix #8: Add error handling to message sending
 export const sendGameMessage = (msg: P2PMessage) => {
-  if (gameActions) {
+  try {
+    if (!gameActions) {
+      console.warn('[P2P] Cannot send message: gameActions not initialized');
+      return false;
+    }
     gameActions.send(msg);
+    return true;
+  } catch (error) {
+    console.error('[P2P] Error sending message:', error);
+    return false;
   }
 };
 
@@ -156,16 +174,27 @@ export const getGamePeers = () => {
   return Object.keys(peers); // Convert object to array of peer IDs
 };
 
-// Check if a specific peer is connected
+// Check if a specific peer is connected (High Fix #5: Safe type checking)
 export const isPeerConnected = (peerId: string): boolean => {
   if (!gameRoom) return false;
-  const peers = gameRoom.getPeers();
-  const peer = peers[peerId];
-  if (!peer) return false;
 
-  // Check RTCPeerConnection state
-  const pc = peer as RTCPeerConnection;
-  return pc.connectionState === 'connected' || pc.iceConnectionState === 'connected';
+  try {
+    const peers = gameRoom.getPeers();
+    const peer = peers[peerId];
+    if (!peer) return false;
+
+    // Safe type checking - peer may not be a full RTCPeerConnection
+    const pc = peer as any;
+    if (typeof pc !== 'object' || pc === null) return false;
+
+    const connectionState = pc.connectionState;
+    const iceConnectionState = pc.iceConnectionState;
+
+    return connectionState === 'connected' || iceConnectionState === 'connected';
+  } catch (error) {
+    console.error('[P2P] Error checking peer connection:', error);
+    return false;
+  }
 };
 
 // Wait for peer connection to be established

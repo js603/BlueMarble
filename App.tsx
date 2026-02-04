@@ -96,11 +96,12 @@ export default function App() {
   const [rooms, setRooms] = useState<RoomInfo[]>([]); // 로비 방 목록
   const [connectedPeers, setConnectedPeers] = useState<string[]>([]); // 연결된 Peer ID 목록
   const [peerNicknames, setPeerNicknames] = useState<Record<string, string>>({}); // peerId -> nickname 매핑
+  const [peerPlayerIds, setPeerPlayerIds] = useState<Record<string, number>>({}); // peerId -> playerId 매핑
 
   const gameStateRef = useRef(gameState);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
-  const roomRef = useRef<any>(null); // P2P room ref
+  const roomRef = useRef<ReturnType<typeof joinGameRoom> | null>(null); // ✅ High Fix #4: Proper typing
 
   // --- P2P & State Wrapper ---
 
@@ -114,12 +115,20 @@ export default function App() {
 
     setGameStateInternal(newState);
 
-    // Broadcast if Host OR if Playing (Logic runs on Host mostly, but actions need sync)
-    // For simplicity in this port, we broadcast every state change made locally.
-    if (newState.isMultiplayer) { // && (isHost || newState.gameStatus === 'PLAYING')
-      broadcastGameState(newState);
+    // ✅ Low Fix #9: Only Host broadcasts, and only for important game state changes
+    if (isHost && newState.isMultiplayer) {
+      // Only broadcast if game is actually playing or important state changed
+      const shouldBroadcast =
+        newState.gameStatus === 'PLAYING' ||
+        newState.gameStatus === 'ENDED' ||
+        newState.currentPlayerIndex !== gameStateRef.current.currentPlayerIndex ||
+        newState.diceValue !== gameStateRef.current.diceValue;
+
+      if (shouldBroadcast) {
+        broadcastGameState(newState);
+      }
     }
-  }, []);
+  }, [isHost]); // Medium Fix #7: Add isHost to dependency array
 
   // Alias for Reference Logic compatibility
   const setGameState = updateStateAndBroadcast;
@@ -158,9 +167,13 @@ export default function App() {
   useEffect(() => {
     if (showIntro) return; // Wait until intro is complete
 
-    console.log('[App] Connecting to global lobby...');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[App] Connecting to global lobby...');
+    }
     joinLobby((info: RoomInfo) => {
-      console.log(`[App] Received room ad: ${info.name}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[App] Received room ad: ${info.name}`);
+      }
       // 방 목록 업데이트
       setRooms(prev => {
         const existingIdx = prev.findIndex(r => r.id === info.id);
@@ -175,7 +188,9 @@ export default function App() {
     });
 
     return () => {
-      console.log('[App] Disconnecting from lobby...');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[App] Disconnecting from lobby...');
+      }
       leaveLobby();
     };
   }, [showIntro]);
@@ -227,37 +242,95 @@ export default function App() {
     const room = joinGameRoom(roomId, (msg: P2PMessage, peerId: string) => {
       if (msg.type === 'STATE_SYNC') {
         const remoteState = msg.payload as GameState;
-        console.log('[P2P] Received STATE_SYNC from host');
-
-        // Guest: Replace player 2's name with my actual nickname
-        if (!isHostMode && userProfile) {
-          const updatedPlayers = remoteState.players.map(p =>
-            p.id === 2 ? { ...p, name: userProfile.name } : p
-          );
-          setGameStateInternal(prev => ({
-            ...remoteState,
-            players: updatedPlayers,
-            myPlayerId: prev.myPlayerId || 2
-          }));
-        } else {
-          setGameStateInternal(prev => ({
-            ...remoteState,
-            myPlayerId: prev.myPlayerId || (isHostMode ? 1 : 2)
-          }));
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[P2P] Received STATE_SYNC from host');
         }
+
+        // ✅ Critical Fix #3: Protect myPlayerId from being overwritten
+        setGameStateInternal(prev => {
+          const myId = prev.myPlayerId; // Preserve existing myPlayerId
+
+          // Guest: Replace my player's name with my actual nickname
+          if (!isHostMode && userProfile && myId) {
+            const updatedPlayers = remoteState.players.map(p =>
+              p.id === myId ? { ...p, name: userProfile.name } : p
+            );
+            return {
+              ...remoteState,
+              players: updatedPlayers,
+              myPlayerId: myId // Always preserve myPlayerId
+            };
+          }
+
+          return {
+            ...remoteState,
+            myPlayerId: myId || (isHostMode ? 1 : undefined) // Keep existing or set Host to 1
+          };
+        });
       } else if (msg.type === 'CHAT') {
         setChatMessages(prev => [...prev, msg.payload as ChatMessage]);
+      } else if (msg.type === 'PLAYER_ID_ASSIGN' && !isHostMode) {
+        // ✅ Critical Fix #1: Guest receives unique Player ID from Host
+        const assignedId = msg.payload as number;
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Guest] Assigned Player ID:', assignedId);
+        }
+        setGameState(prev => ({
+          ...prev,
+          myPlayerId: assignedId
+        }));
       } else if (msg.type === 'GUEST_NICKNAME' && isHostMode) {
         // Host: Store guest nickname
-        console.log('[Host] Received guest nickname:', msg.payload, 'from', peerId);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Host] Received guest nickname:', msg.payload, 'from', peerId);
+        }
         setPeerNicknames(prev => ({
           ...prev,
           [peerId]: msg.payload
         }));
+      } else if (msg.type === 'HOST_MIGRATION') {
+        // Another player became the new Host
+        const { newHostPlayerId } = msg.payload;
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Host Migration] New Host is Player ID:', newHostPlayerId);
+        }
+        // If I'm not the new Host, ensure isHost is false
+        if (gameStateRef.current.myPlayerId !== newHostPlayerId) {
+          setIsHost(false);
+        }
       }
     }, (peerId) => {
-      console.log('Peer joined:', peerId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Peer joined:', peerId);
+      }
       setConnectedPeers(prev => [...prev, peerId]);
+
+      // ✅ Critical Fix #1: Host assigns unique Player ID to each Guest
+      if (isHostMode) {
+        waitForPeerConnection(peerId).then((connected) => {
+          if (connected) {
+            // Calculate next available Player ID
+            const existingIds = Object.values(peerPlayerIds);
+            let nextId = 2;
+            while (existingIds.includes(nextId)) {
+              nextId++;
+            }
+
+            // Store mapping
+            setPeerPlayerIds(prev => ({
+              ...prev,
+              [peerId]: nextId
+            }));
+
+            // Send Player ID to Guest
+            sendGameMessage({
+              type: 'PLAYER_ID_ASSIGN',
+              payload: nextId
+            });
+            console.log(`[Host] Assigned Player ID ${nextId} to peer:`, peerId);
+          }
+        });
+      }
 
       // Guest: Send nickname when peer connection is established
       if (!isHostMode && userProfile) {
@@ -267,25 +340,86 @@ export default function App() {
               type: 'GUEST_NICKNAME',
               payload: userProfile.name
             });
-            console.log('[Guest] Sent nickname to host:', userProfile.name);
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Guest] Sent nickname to host:', userProfile.name);
+            }
           } else {
             console.error('[Guest] Failed to establish peer connection, nickname not sent');
           }
         });
       }
     }, (peerId) => {
-      console.log('Peer left:', peerId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Peer left:', peerId);
+      }
+
+      // ✅ Critical Fix #2: Clean up all peer-related state
       setConnectedPeers(prev => prev.filter(id => id !== peerId));
+      setPeerNicknames(prev => {
+        const updated = { ...prev };
+        delete updated[peerId];
+        return updated;
+      });
+      setPeerPlayerIds(prev => {
+        const updated = { ...prev };
+        delete updated[peerId];
+        return updated;
+      });
+
+      // ✅ Host Migration: When Host leaves, lowest Player ID becomes new Host
+      if (!isHostMode && connectedPeers.length === 1) {
+        // Host just left - I need to become the new Host!
+        const myId = gameStateRef.current.myPlayerId;
+
+        // Find all remaining player IDs (excluding the one who left)
+        const remainingPeerIds: number[] = Object.entries(peerPlayerIds)
+          .filter(([pid]) => pid !== peerId)
+          .map(([, playerId]) => playerId as number);
+
+        // Add my own ID
+        if (myId) remainingPeerIds.push(myId);
+
+        // I'm the new Host if I have the lowest Player ID
+        const lowestId = Math.min(...remainingPeerIds);
+
+        if (myId === lowestId) {
+          // I become the new Host!
+          setIsHost(true);
+          alert('호스트가 나갔습니다. 당신이 새로운 호스트가 되었습니다!');
+
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Host Migration] I am now the new Host! Player ID:', myId);
+          }
+
+          // Broadcast my new Host status to remaining peers
+          sendGameMessage({
+            type: 'HOST_MIGRATION',
+            payload: { newHostPlayerId: myId }
+          });
+        } else {
+          // Someone else became the new Host
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Host Migration] Player', lowestId, 'is the new Host');
+          }
+        }
+      }
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[P2P] Cleaned up state for peer:', peerId);
+      }
     });
 
     roomRef.current = room;
     // Host: 대기실에서 시작 버튼을 눌러 시작하도록 대기
 
-    // Guest: Set myPlayerId
-    if (!isHostMode && userProfile) {
+    // Guest: myPlayerId will be assigned by Host via PLAYER_ID_ASSIGN message
+    // No need to set it here anymore
+
+    // Host: Set myPlayerId to 1
+    if (isHostMode) {
       setGameState(prev => ({
         ...prev,
-        myPlayerId: 2
+        myPlayerId: 1
       }));
     }
 
