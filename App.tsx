@@ -268,17 +268,22 @@ export default function App() {
       const currentState = gameStateRef.current;
       const currentPlayer = currentState.players[currentState.currentPlayerIndex];
       const moveSteps = currentState.pendingMoveSteps;
+      const willMove = moveSteps > 0 && !!currentPlayer;
 
+      // [CRITICAL] isRolling: false와 isMoving: true를 단일 배치로 처리하여 
+      // AI의 useEffect가 끼어들 간극(gap)을 원천 차단
       setGameStateInternal(prev => ({
         ...prev,
         isRolling: false,
+        isMoving: willMove, // 바로 이동 상태로 전환
         pendingMoveSteps: 0,
         waitingForNextTurn: moveSteps === 0
       }));
 
       // 이동할 칸이 있으면 이동 시작
-      if (moveSteps > 0 && currentPlayer) {
-        gameLogic.movePlayerStepByStep(currentPlayer.id, moveSteps);
+      if (willMove) {
+        // movePlayerStepByStep 내부에서 중복 상태 업데이트를 하지 않도록 플래그 전달
+        gameLogic.movePlayerStepByStep(currentPlayer.id, moveSteps, true);
       }
     }, ANIMATION_DELAYS.DICE_ROLL);
 

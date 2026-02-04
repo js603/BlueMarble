@@ -16,7 +16,7 @@ export interface UseGameLogicReturn {
     handlePayment: (amount: number, creditorId: number | null, reason: string) => boolean;
     handleArrival: (playerId: number) => void;
     handleTeleport: (targetIndex: number) => void;
-    movePlayerStepByStep: (playerId: number, steps: number) => Promise<void>;
+    movePlayerStepByStep: (playerId: number, steps: number, alreadyMoving?: boolean) => Promise<void>;
     handleRollDice: () => void;
     nextTurn: () => void;
     handleModalAction: (confirmed: boolean) => void;
@@ -295,8 +295,10 @@ export function useGameLogic({
         }, 800);
     }, [gameStateRef, setGameState, addChatMessage, handleArrival]);
 
-    const movePlayerStepByStep = useCallback(async (playerId: number, steps: number) => {
-        setGameState(prev => ({ ...prev, isMoving: true }));
+    const movePlayerStepByStep = useCallback(async (playerId: number, steps: number, alreadyMoving?: boolean) => {
+        if (!alreadyMoving) {
+            setGameState(prev => ({ ...prev, isMoving: true }));
+        }
 
         for (let i = 0; i < steps; i++) {
             await new Promise(resolve => setTimeout(resolve, 300));
@@ -321,7 +323,8 @@ export function useGameLogic({
 
     const handleRollDice = useCallback(() => {
         const currentState = gameStateRef.current;
-        if (currentState.isRolling || currentState.isMoving || currentState.modal || currentState.waitingForNextTurn || currentState.isSelectingMoveTarget || currentState.pendingArrivalId || currentState.outstandingDebt > 0) return;
+        // 더욱 강력한 가드: 게임 상태와 이동 여부를 모두 체크
+        if (currentState.isRolling || currentState.isMoving || currentState.modal || currentState.waitingForNextTurn || currentState.isSelectingMoveTarget || currentState.pendingArrivalId || currentState.outstandingDebt > 0 || currentState.gameStatus !== 'PLAYING') return;
 
         // 주사위 값을 미리 계산
         const d1 = Math.floor(Math.random() * 6) + 1;
