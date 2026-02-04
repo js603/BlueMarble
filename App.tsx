@@ -234,20 +234,29 @@ export default function App() {
 
   // 11. Orchestration Effects (AI, Modal, Pending Arrival)
   useEffect(() => {
-    if (gameState.outstandingDebt <= 0) return;
+    if (gameState.outstandingDebt <= 0 || gameState.modal) return;
 
-    // 현재 턴 플레이어 정보는 Ref에서 가져옴
-    const s = gameStateRef.current;
+    const s = gameState;
     const p = s.players[s.currentPlayerIndex];
-    if (!p) return;
+    if (!p || p.isComputer) return;
 
-    if (p.money >= s.outstandingDebt) {
+    // 자산 보유 여부 및 상환 가능 여부 계산
+    const ownedCells = s.board.filter(c => c.ownerId === p.id);
+    const canPayNow = p.money >= s.outstandingDebt;
+
+    // [Normal Goal] 자산이 전혀 없고 돈도 부족한 경우에만 자동 파산 처리 호출
+    const isTotallyBankrupt = ownedCells.length === 0 && p.money < s.outstandingDebt;
+
+    if (canPayNow || isTotallyBankrupt) {
       const timer = setTimeout(() => {
-        gameLogic.handlePayment(s.outstandingDebt, s.creditorId, '빚');
+        const currentS = gameStateRef.current;
+        if (currentS.outstandingDebt > 0) {
+          gameLogic.handlePayment(currentS.outstandingDebt, currentS.creditorId, '부채 정산');
+        }
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [gameState.outstandingDebt, gameState.currentPlayerIndex, gameLogic.handlePayment]);
+  }, [gameState.outstandingDebt, gameState.currentPlayerIndex, gameState.players, gameState.modal, gameLogic]);
 
   useEffect(() => {
     if (!gameState.modal && gameState.pendingArrivalId !== null) {
@@ -386,11 +395,16 @@ export default function App() {
     const timer = setTimeout(() => {
       const currentS = gameStateRef.current;
       const currentP = currentS.players[currentS.currentPlayerIndex];
+      if (!currentP) return;
+
       const ownedCells = currentS.board.filter(c => c.ownerId === currentP.id);
       if (ownedCells.length > 0) {
         ownedCells.sort((a, b) => gameLogic.calculateSellPrice(b) - gameLogic.calculateSellPrice(a));
         const target = ownedCells[0];
         gameLogic.sellLand(currentS.board.findIndex(c => c.id === target.id), gameLogic.calculateSellPrice(target));
+      } else {
+        // [Normal Goal] AI가 더 이상 팔 자산이 없으면 파산 처리 호출
+        gameLogic.handlePayment(currentS.outstandingDebt, currentS.creditorId, '부채 정산');
       }
     }, 1500);
     return () => clearTimeout(timer);

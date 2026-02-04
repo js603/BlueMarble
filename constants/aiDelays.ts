@@ -8,7 +8,7 @@ export const AI_UX_DELAYS = {
     BEFORE_TELEPORT: 2500,
     /** AI가 턴을 종료하기 전 시간 */
     BEFORE_NEXT_TURN: 1500,
-    /** AI가 빚 청산을 위해 땅을 팔기 전 시간 */
+    /** AI가 자금 확보를 위해 땅을 팔기 전 시간 */
     BEFORE_SELL_LAND: 1500
 } as const;
 

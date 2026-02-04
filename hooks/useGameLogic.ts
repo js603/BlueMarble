@@ -77,18 +77,51 @@ export function useGameLogic({
         }
 
         const ownedCells = currentState.board.filter(c => c.ownerId === player.id);
-        const totalAssetValue = ownedCells.reduce((sum, cell) => sum + calculateSellPrice(cell), 0);
 
-        if (player.money + totalAssetValue < amount) {
+        // [Normal Goal] 자산이 하나라도 있다면 즉시 파산시키지 않고 매각 단계(DEBT)로 보냄
+        if (ownedCells.length === 0 && player.money < amount) {
             setGameState(prev => {
                 let newPlayers = [...prev.players];
-                newPlayers[prev.currentPlayerIndex] = { ...newPlayers[prev.currentPlayerIndex], money: -1, isBankrupt: true };
-                addChatMessage('SYSTEM', '파산', `⚠️ ${player.name}님은 자산을 모두 팔아도 빚을 갚을 수 없어 파산했습니다!`);
-                return { ...prev, players: newPlayers, waitingForNextTurn: true, modal: null };
+                const currentPlayer = { ...newPlayers[prev.currentPlayerIndex] };
+                const remainingMoney = Math.max(0, currentPlayer.money); // 파산자의 남은 돈
+
+                newPlayers[prev.currentPlayerIndex] = { ...currentPlayer, money: -1, isBankrupt: true };
+
+                // 파산자의 모든 자산 초기화 (이미 ownedCells.length === 0 이겠지만 안전을 위해 유지)
+                const newBoard = prev.board.map(cell => {
+                    if (cell.ownerId === currentPlayer.id) {
+                        return { ...cell, ownerId: null, buildingLevel: 0 };
+                    }
+                    return cell;
+                });
+
+                // [Normal Goal] 파산 시 잔여 현금을 채권자에게 양도
+                if (creditorId) {
+                    const creditorIdx = newPlayers.findIndex(p => p.id === creditorId);
+                    if (creditorIdx !== -1) {
+                        newPlayers[creditorIdx] = {
+                            ...newPlayers[creditorIdx],
+                            money: newPlayers[creditorIdx].money + remainingMoney
+                        };
+                        addChatMessage('SYSTEM', '양도', `${player.name}님의 남은 자금 ₩${remainingMoney.toLocaleString()}이 ${newPlayers[creditorIdx].name}님에게 양도되었습니다.`);
+                    }
+                }
+
+                addChatMessage('SYSTEM', '파산', `⚠️ ${player.name}님은 더 이상 팔 수 있는 자산이 없어 파산했습니다!`);
+                return {
+                    ...prev,
+                    players: newPlayers,
+                    board: newBoard,
+                    outstandingDebt: 0,
+                    creditorId: null,
+                    waitingForNextTurn: true,
+                    modal: null
+                };
             });
             return false;
         }
 
+        // 현금은 부족하지만 팔 땅이 있는 경우
         setGameState(prev => ({
             ...prev,
             outstandingDebt: amount,
@@ -96,8 +129,8 @@ export function useGameLogic({
             modal: {
                 isOpen: true,
                 type: 'DEBT',
-                title: '자금 부족 경고',
-                message: `${reason}을(를) 위한 자금이 부족합니다.\n(부족 금액: ₩${(amount - player.money).toLocaleString()})\n\n보유한 땅을 매각하여 자금을 확보하세요.`,
+                title: '매각 권유',
+                message: `${reason} 납부를 위한 자금이 부족합니다.\n(부족 금액: ₩${(amount - player.money).toLocaleString()})\n\n보유한 땅을 매각하여 자금을 확보하세요.`,
                 isComputerAction: player.isComputer
             }
         }));

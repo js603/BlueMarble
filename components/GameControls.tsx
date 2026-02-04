@@ -21,7 +21,7 @@ export function GameControls({ gameState, handleRollDice, nextTurn }: GameContro
                     <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 flex items-center justify-between text-red-400 animate-pulse">
                         <div className="flex items-center gap-2">
                             <span className="text-xl">🚨</span>
-                            <span className="font-bold text-sm">빚 청산 필요!</span>
+                            <span className="font-bold text-sm">자금 확보 필요!</span>
                         </div>
                         <span className="font-mono font-bold">-{gameState.outstandingDebt.toLocaleString()}</span>
                     </div>
