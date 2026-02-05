@@ -406,6 +406,8 @@ export function useGameLogic({
             return;
         }
 
+        addChatMessage('SYSTEM', '주사위', `결과: ${d1} + ${d2} = ${total}`);
+
         let moveSteps = 0;
         let isTrapRelease = false;
         let isTrapStay = false;
