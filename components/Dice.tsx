@@ -10,7 +10,7 @@ interface DiceProps {
 }
 
 // Global constant for dice size
-const DIE_SIZE = 0.7;
+const DIE_SIZE = 0.35;
 const ROLL_AREA_RADIUS = 1.9;
 
 // Error Boundary for R3F components
@@ -34,20 +34,7 @@ class DiceErrorBoundary extends Component<{ children: ReactNode, fallback: React
   }
 }
 
-// Map dice value to Euler rotations (in radians)
-const getRotationForValue = (val: number): [number, number, number] => {
-  switch (val) {
-    case 1: return [0, 0, 0];
-    case 2: return [0, 0, -Math.PI / 2];
-    case 3: return [-Math.PI / 2, 0, 0];
-    case 4: return [Math.PI / 2, 0, 0];
-    case 5: return [0, 0, Math.PI / 2];
-    case 6: return [Math.PI, 0, 0];
-    default: return [0, 0, 0];
-  }
-};
-
-const DieModel = ({ targetValue, rolling }: { targetValue: number, rolling: boolean }) => {
+const DieModel = () => {
   const { scene } = useGLTF('/dice/scene.gltf') as any;
 
   const model = useMemo(() => {
@@ -73,18 +60,11 @@ const DieModel = ({ targetValue, rolling }: { targetValue: number, rolling: bool
     return clone;
   }, [scene]);
 
-  useEffect(() => {
-    if (model && !rolling) {
-      const rotations = getRotationForValue(targetValue);
-      model.rotation.set(...rotations);
-    }
-  }, [model, targetValue, rolling]);
-
   if (!model) return null;
   return <primitive object={model} />;
 };
 
-const DieFallback = ({ targetValue, rolling }: { targetValue: number, rolling: boolean }) => {
+const DieFallback = () => {
   const textures = useMemo(() => {
     return [2, 5, 1, 6, 3, 4].map(label => {
       const canvas = document.createElement('canvas');
@@ -117,17 +97,8 @@ const DieFallback = ({ targetValue, rolling }: { targetValue: number, rolling: b
     });
   }, []);
 
-  const meshRef = useRef<THREE.Mesh>(null);
-
-  useEffect(() => {
-    if (meshRef.current && !rolling) {
-      const rotations = getRotationForValue(targetValue);
-      meshRef.current.rotation.set(...rotations);
-    }
-  }, [targetValue, rolling]);
-
   return (
-    <mesh ref={meshRef} castShadow receiveShadow>
+    <mesh castShadow receiveShadow>
       <boxGeometry args={[DIE_SIZE, DIE_SIZE, DIE_SIZE]} />
       {textures.map((tex, i) => (
         <meshStandardMaterial key={i} attach={`material-${i}`} map={tex} roughness={0.1} metalness={0.1} />
@@ -136,7 +107,7 @@ const DieFallback = ({ targetValue, rolling }: { targetValue: number, rolling: b
   );
 };
 
-const Die = ({ position, targetValue, rolling }: { position: [number, number, number], targetValue: number, rolling: boolean }) => {
+const Die = ({ position, rolling }: { position: [number, number, number], rolling: boolean }) => {
   const [ref, api] = useBox(() => ({
     mass: 10,
     position,
@@ -145,6 +116,9 @@ const Die = ({ position, targetValue, rolling }: { position: [number, number, nu
     restitution: 0.2,
     linearDamping: 0.15,
     angularDamping: 0.12,
+    allowSleep: true,
+    sleepSpeedLimit: 0.15,
+    sleepTimeLimit: 0.6,
   }));
 
   const rollApplied = useRef(false);
@@ -153,6 +127,8 @@ const Die = ({ position, targetValue, rolling }: { position: [number, number, nu
     if (rolling) {
       rollApplied.current = false;
       api.wakeUp();
+      api.linearDamping.set(0.12);
+      api.angularDamping.set(0.1);
 
       // Random starting spread
       const startX = position[0] + (Math.random() - 0.5) * 0.8;
@@ -179,20 +155,17 @@ const Die = ({ position, targetValue, rolling }: { position: [number, number, nu
       ];
       api.applyImpulse(impulse, point);
     } else if (!rolling && !rollApplied.current) {
-      api.velocity.set(0, 0, 0);
-      api.angularVelocity.set(0, 0, 0);
-      const rotations = getRotationForValue(targetValue);
-      api.rotation.set(...rotations);
-      api.position.set(position[0], DIE_SIZE / 2, 0);
+      api.linearDamping.set(0.4);
+      api.angularDamping.set(0.35);
       rollApplied.current = true;
     }
-  }, [rolling, api, targetValue, position]);
+  }, [rolling, api, position]);
 
   return (
     <group ref={ref as any}>
-      <DiceErrorBoundary fallback={<DieFallback targetValue={targetValue} rolling={rolling} />}>
-        <Suspense fallback={<DieFallback targetValue={targetValue} rolling={rolling} />}>
-          <DieModel targetValue={targetValue} rolling={rolling} />
+      <DiceErrorBoundary fallback={<DieFallback />}>
+        <Suspense fallback={<DieFallback />}>
+          <DieModel />
         </Suspense>
       </DiceErrorBoundary>
     </group>
@@ -238,8 +211,8 @@ export const Dice: FC<DiceProps> = ({ value, rolling }) => {
         <pointLight position={[-3, 4, 3]} intensity={1.2} color="#6366f1" />
 
         <Physics gravity={[0, -40, 0]} defaultContactMaterial={{ restitution: 0.2, friction: 0.35 }}>
-          <Die position={[-1.2, 5, 0]} targetValue={value[0]} rolling={rolling} />
-          <Die position={[1.2, 5, 0]} targetValue={value[1]} rolling={rolling} />
+          <Die position={[-1.2, 5, 0]} rolling={rolling} />
+          <Die position={[1.2, 5, 0]} rolling={rolling} />
           <Ground />
           <InvisibleWalls />
         </Physics>
