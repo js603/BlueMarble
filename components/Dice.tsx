@@ -44,8 +44,8 @@ export const Dice: React.FC<DiceProps> = ({ value, rolling }) => {
 
     const init = async () => {
       Promise.all([
-        import('/vendor/three.module.js'),
-        import('/vendor/cannon-es.js')
+        import('../vendor/three.module.js'),
+        import('../vendor/cannon-es.js')
       ])
         .then(([threeModule, CANNON]) => {
           if (!isMounted || !containerRef.current) return;
@@ -64,7 +64,8 @@ export const Dice: React.FC<DiceProps> = ({ value, rolling }) => {
             MeshBasicMaterial,
             CanvasTexture,
             Vector3,
-            Quaternion
+            Quaternion,
+            Euler
           } = threeModule;
 
           const width = containerRef.current.clientWidth;
@@ -164,7 +165,7 @@ export const Dice: React.FC<DiceProps> = ({ value, rolling }) => {
               6: [Math.PI, 0, 0]
             };
             const [x, y, z] = rotations[faceValue] || [0, 0, 0];
-            q.setFromEuler(x, y, z);
+            q.setFromEuler(new Euler(x, y, z));
             return q;
           };
 
@@ -195,8 +196,8 @@ export const Dice: React.FC<DiceProps> = ({ value, rolling }) => {
 
             diceBodies.forEach((body, idx) => {
               const mesh = diceMeshes[idx];
-              mesh.position.copy(body.position as unknown as Vector3);
-              mesh.quaternion.copy(body.quaternion as unknown as Quaternion);
+              mesh.position.copy(body.position as any);
+              mesh.quaternion.copy(body.quaternion as any);
             });
 
             renderer.render(scene, camera);
@@ -254,6 +255,7 @@ export const Dice: React.FC<DiceProps> = ({ value, rolling }) => {
       engineRef.current.updateRoll(false, value);
     }
   }, [rolling, value, renderMode]);
+
 
   if (renderMode === 'fallback') {
     return (
