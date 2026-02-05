@@ -61,10 +61,11 @@ const getGridArea = (idx: number): string => {
 
 export function GameBoard({ gameState, onCellClick }: GameBoardProps) {
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    const myPlayerId = gameState.myPlayerId;
 
     return (
-        <main className="flex-1 relative flex items-center justify-center p-4 overflow-hidden z-10">
-            <div className="w-full max-w-md aspect-square relative grid grid-cols-6 grid-rows-6 gap-1 p-1.5 bg-slate-900/90 rounded-2xl shadow-2xl ring-1 ring-white/10 backdrop-blur-sm">
+        <main className="flex-1 relative flex items-center justify-center p-2 sm:p-4 overflow-hidden z-10">
+            <div className="w-[92vw] max-w-md aspect-square relative grid grid-cols-6 grid-rows-6 gap-1 p-1.5 bg-slate-900/90 rounded-2xl shadow-2xl ring-1 ring-white/10 backdrop-blur-sm">
 
                 {/* Center Hub: Dice & Info */}
                 <div className="col-start-2 col-end-6 row-start-2 row-end-6 bg-slate-950/50 rounded-xl relative overflow-hidden flex flex-col items-center justify-center p-4 border border-white/5">
@@ -100,6 +101,12 @@ export function GameBoard({ gameState, onCellClick }: GameBoardProps) {
                             </span>
                         )}
                     </div>
+
+                    {currentPlayer?.hasEscapeCard && (
+                        <div className="mt-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/40">
+                            🗝️ 무인도 탈출권 보유
+                        </div>
+                    )}
                 </div>
 
                 {/* Grid Cells */}
@@ -112,6 +119,7 @@ export function GameBoard({ gameState, onCellClick }: GameBoardProps) {
 
                     const cellOwner = cell.ownerId ? gameState.players.find(p => p.id === cell.ownerId) : null;
                     const ownerBorderStyle = cellOwner ? { borderColor: cellOwner.color, borderWidth: '3px' } : {};
+                    const isMyLand = cellOwner && myPlayerId && cellOwner.id === myPlayerId;
 
                     return (
                         <div
@@ -133,6 +141,11 @@ export function GameBoard({ gameState, onCellClick }: GameBoardProps) {
                                     <div className={`w-[80%] h-1 sm:h-1.5 rounded-full mt-1 ${cell.color}`}></div>
                                     <div className="flex-1 flex flex-col items-center justify-center w-full">
                                         <span className="text-[8px] sm:text-[10px] font-bold text-slate-200 leading-none text-center line-clamp-1 w-full px-0.5">{cell.name}</span>
+                                        {isMyLand && (
+                                            <span className="mt-0.5 text-[7px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-500/30">
+                                                {cell.buildingLevel === 0 ? '내 땅' : `내 건물 Lv.${cell.buildingLevel}`}
+                                            </span>
+                                        )}
                                         {cell.buildingLevel > 0 && (
                                             <div className="mt-0.5 transform scale-75 sm:scale-100">
                                                 <BuildingIcon level={cell.buildingLevel} color={cellOwner?.color} />

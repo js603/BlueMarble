@@ -15,6 +15,7 @@ interface UseP2PConnectionProps {
     setGameStateInternal: (action: GameState | ((prev: GameState) => GameState)) => void;
     setChatMessages: (action: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
     setShowLobby: (show: boolean) => void;
+    playerActionRef: MutableRefObject<(action: 'ROLL_DICE' | 'NEXT_TURN', playerId: number) => void>;
 }
 
 export function useP2PConnection({
@@ -22,7 +23,8 @@ export function useP2PConnection({
     gameStateRef,
     setGameStateInternal,
     setChatMessages,
-    setShowLobby
+    setShowLobby,
+    playerActionRef
 }: UseP2PConnectionProps) {
     const [isHost, setIsHost] = useState(false);
     const [currentRoom, setCurrentRoom] = useState<RoomInfo | null>(null);
@@ -91,47 +93,34 @@ export function useP2PConnection({
                     setIsHost(false);
                 }
             }
-            // 6. PLAYER_ACTION (Host Only)
+            // 6. ROOM_UPDATE
+            else if (msg.type === 'ROOM_UPDATE') {
+                const updatedRoom = msg.payload as RoomInfo;
+                setCurrentRoom(prev => {
+                    if (!prev || prev.id !== updatedRoom.id) return prev;
+                    return { ...prev, ...updatedRoom };
+                });
+            }
+            // 7. PLAYER_ACTION (Host Only)
             else if (msg.type === 'PLAYER_ACTION' && isHostMode) {
                 const { action, playerId } = msg.payload;
-                const s = gameStateRef.current;
-                const currentPlayer = s.players[s.currentPlayerIndex];
-
-                if (currentPlayer && currentPlayer.id === playerId) {
-                    if (action === 'NEXT_TURN') {
-                        // Process next turn (We'll let App handle the actual turn logic broadscast via Hook)
-                        // But for now, we keep the logic here as translated from App.tsx
-                        setGameStateInternal(prev => {
-                            let nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
-                            let loopGuard = 0;
-                            while (prev.players[nextIndex].isBankrupt && loopGuard < prev.players.length) {
-                                nextIndex = (nextIndex + 1) % prev.players.length;
-                                loopGuard++;
-                            }
-                            const active = prev.players.filter(p => !p.isBankrupt);
-                            if (active.length === 1) return { ...prev, gameStatus: 'ENDED', winner: active[0].id };
-                            return {
-                                ...prev,
-                                currentPlayerIndex: nextIndex,
-                                turnCount: prev.turnCount + 1,
-                                consecutiveDoubles: 0,
-                                waitingForNextTurn: false,
-                                isRolling: false,
-                                isMoving: false,
-                                isSelectingMoveTarget: false,
-                                modal: null,
-                                pendingArrivalId: null,
-                                outstandingDebt: 0
-                            };
-                        });
-                    }
-                }
+                playerActionRef.current(action, playerId);
             }
         }, (peerId) => {
             // Peer Joined
             setConnectedPeers(prev => [...prev, peerId]);
 
             if (isHostMode) {
+                setCurrentRoom(prev => {
+                    if (!prev) return prev;
+                    const updatedRoom = {
+                        ...prev,
+                        currentPlayers: Math.min(prev.maxPlayers, prev.currentPlayers + 1),
+                        lastUpdated: Date.now()
+                    };
+                    sendGameMessage({ type: 'ROOM_UPDATE', payload: updatedRoom });
+                    return updatedRoom;
+                });
                 waitForPeerConnection(peerId).then((connected) => {
                     if (connected) {
                         // Calculate next available Player ID
@@ -180,6 +169,19 @@ export function useP2PConnection({
                         sendGameMessage({ type: 'HOST_MIGRATION', payload: { newHostPlayerId: myId } });
                     }
                 }
+            }
+
+            if (isHostMode) {
+                setCurrentRoom(prev => {
+                    if (!prev) return prev;
+                    const updatedRoom = {
+                        ...prev,
+                        currentPlayers: Math.max(1, prev.currentPlayers - 1),
+                        lastUpdated: Date.now()
+                    };
+                    sendGameMessage({ type: 'ROOM_UPDATE', payload: updatedRoom });
+                    return updatedRoom;
+                });
             }
         });
 
