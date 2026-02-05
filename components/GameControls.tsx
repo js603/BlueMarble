@@ -13,8 +13,8 @@ export function GameControls({ gameState, handleRollDice, nextTurn }: GameContro
     const isComputerTurn = currentPlayer?.isComputer;
 
     return (
-        <footer className="relative z-40 bg-slate-900 border-t border-white/5 px-4 pb-safe-bottom pt-4 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-            <div className="max-w-md mx-auto flex flex-col gap-4 pb-4">
+        <footer className="relative z-40 bg-slate-900 border-t border-white/5 px-3 sm:px-4 pb-safe-bottom pt-3 sm:pt-4 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+            <div className="max-w-md mx-auto flex flex-col gap-3 sm:gap-4 pb-4">
 
                 {/* Debt Warning */}
                 {gameState.outstandingDebt > 0 && !isComputerTurn && (
@@ -32,7 +32,7 @@ export function GameControls({ gameState, handleRollDice, nextTurn }: GameContro
                     <button
                         onClick={handleRollDice}
                         disabled={gameState.isRolling || gameState.isMoving || !isMyTurn}
-                        className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-black text-xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full py-3 sm:py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-black text-lg sm:text-xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <span className="text-2xl">🎲</span>
                         {!isMyTurn
@@ -47,7 +47,7 @@ export function GameControls({ gameState, handleRollDice, nextTurn }: GameContro
                     <button
                         onClick={nextTurn}
                         disabled={!isMyTurn}
-                        className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full py-3 sm:py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black text-lg sm:text-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <span className="text-2xl">⏭️</span>
                         {!isMyTurn

@@ -20,7 +20,7 @@ import {
   joinLobby,
   leaveLobby
 } from './services/p2pService';
-import { initAudio, startBGM, stopBGM, toggleMute as toggleAudioMute } from './services/audioService';
+import { initAudio, startBGM, stopBGM, toggleMute as toggleAudioMute, playSfx } from './services/audioService';
 
 import { useGameLogic } from './hooks/useGameLogic';
 import { useP2PConnection } from './hooks/useP2PConnection';
@@ -69,6 +69,8 @@ export default function App() {
   const gameStateRef = useRef(gameState);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
   const playerActionRef = useRef<(action: 'ROLL_DICE' | 'NEXT_TURN', playerId: number) => void>(() => {});
+  const previousRollingRef = useRef(false);
+  const previousModalTitleRef = useRef<string | null>(null);
 
   // 3. P2P Connection Hook
   const {
@@ -153,6 +155,23 @@ export default function App() {
     initAudio();
     return () => stopBGM();
   }, []);
+
+  useEffect(() => {
+    if (gameState.isRolling && !previousRollingRef.current) {
+      playSfx('dice');
+    }
+    previousRollingRef.current = gameState.isRolling;
+  }, [gameState.isRolling]);
+
+  useEffect(() => {
+    const modalTitle = gameState.modal?.title || null;
+    if (modalTitle && modalTitle !== previousModalTitleRef.current) {
+      if (modalTitle.includes('통행료')) playSfx('rent');
+      if (modalTitle.includes('황금열쇠')) playSfx('key');
+      if (modalTitle.includes('탈출')) playSfx('escape');
+    }
+    previousModalTitleRef.current = modalTitle;
+  }, [gameState.modal?.title]);
 
   const toggleMute = () => {
     const newState = !isMuted;
@@ -496,7 +515,7 @@ export default function App() {
 
   // 12. Render
   return (
-    <div className="relative h-[100dvh] w-full bg-slate-950 text-white overflow-hidden font-sans flex flex-col">
+    <div className="relative min-h-[100dvh] w-full bg-slate-950 text-white overflow-hidden font-sans flex flex-col">
       <div className="absolute inset-0 pointer-events-none opacity-20 bg-[url('https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg')] bg-cover bg-center grayscale mix-blend-overlay"></div>
       <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-slate-950/80 pointer-events-none z-0"></div>
 
