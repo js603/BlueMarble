@@ -500,6 +500,11 @@ export default function App() {
       const currentP = currentS.players[currentS.currentPlayerIndex];
       if (!currentP) return;
 
+      if (currentP.money >= currentS.outstandingDebt) {
+        gameLogic.handlePayment(currentS.outstandingDebt, currentS.creditorId, '부채 정산');
+        return;
+      }
+
       const ownedCells = currentS.board.filter(c => c.ownerId === currentP.id);
       if (ownedCells.length > 0) {
         ownedCells.sort((a, b) => gameLogic.calculateSellPrice(b) - gameLogic.calculateSellPrice(a));
