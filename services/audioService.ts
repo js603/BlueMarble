@@ -5,6 +5,7 @@
 
 let audioCtx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
+let sfxGain: GainNode | null = null;
 let isPlaying = false;
 let isMuted = false;
 
@@ -37,6 +38,9 @@ export const initAudio = () => {
     masterGain = audioCtx.createGain();
     masterGain.gain.value = 0.3; // Master volume
     masterGain.connect(audioCtx.destination);
+    sfxGain = audioCtx.createGain();
+    sfxGain.gain.value = 0.6;
+    sfxGain.connect(masterGain);
   }
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
@@ -66,6 +70,34 @@ export const toggleMute = (mute: boolean) => {
         // Smooth fade
         masterGain.gain.cancelScheduledValues(now);
         masterGain.gain.setTargetAtTime(isMuted ? 0 : 0.3, now, 0.1);
+    }
+};
+
+export type SfxType = 'dice' | 'buy' | 'build' | 'rent' | 'key' | 'escape';
+
+export const playSfx = (type: SfxType) => {
+    if (!audioCtx || !sfxGain) initAudio();
+    if (!audioCtx || !sfxGain) return;
+
+    switch (type) {
+        case 'dice':
+            playClickSweep(300, 1200, 0.08);
+            break;
+        case 'buy':
+            playChime([523.25, 659.25, 783.99], 0.12);
+            break;
+        case 'build':
+            playChime([392.0, 523.25, 659.25], 0.14);
+            break;
+        case 'rent':
+            playThud(180, 0.18);
+            break;
+        case 'key':
+            playSparkle();
+            break;
+        case 'escape':
+            playChime([440.0, 659.25, 880.0], 0.1);
+            break;
     }
 };
 
@@ -163,6 +195,71 @@ function playKick(time: number) {
     
     osc.start(time);
     osc.stop(time + 0.5);
+}
+
+function playClickSweep(startFreq: number, endFreq: number, duration: number) {
+    if (!audioCtx || !sfxGain) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(startFreq, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + duration);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(sfxGain);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+function playChime(frequencies: number[], noteDuration: number) {
+    if (!audioCtx || !sfxGain) return;
+    const startTime = audioCtx.currentTime;
+    frequencies.forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, startTime + idx * noteDuration);
+        gain.gain.setValueAtTime(0.18, startTime + idx * noteDuration);
+        gain.gain.exponentialRampToValueAtTime(0.01, startTime + idx * noteDuration + noteDuration);
+        osc.connect(gain);
+        gain.connect(sfxGain);
+        osc.start(startTime + idx * noteDuration);
+        osc.stop(startTime + idx * noteDuration + noteDuration);
+    });
+}
+
+function playThud(freq: number, duration: number) {
+    if (!audioCtx || !sfxGain) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + duration);
+    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(sfxGain);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+function playSparkle() {
+    if (!audioCtx || !sfxGain) return;
+    const now = audioCtx.currentTime;
+    const freqs = [988, 1318, 1760];
+    freqs.forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.03);
+        gain.gain.setValueAtTime(0.15, now + idx * 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + idx * 0.2);
+        osc.connect(gain);
+        gain.connect(sfxGain);
+        osc.start(now + idx * 0.03);
+        osc.stop(now + idx * 0.25);
+    });
 }
 
 function playSnare(time: number) {

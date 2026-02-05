@@ -10,6 +10,7 @@ interface WaitingRoomProps {
     peerNicknames: Record<string, string>;
     isHost: boolean;
     currentRoom: RoomInfo | null;
+    myPlayerId?: number;
     aiCount: number;
     setAiCount: (count: number) => void;
     handleGameStart: () => void;
@@ -23,6 +24,7 @@ export function WaitingRoom({
     peerNicknames,
     isHost,
     currentRoom,
+    myPlayerId,
     aiCount,
     setAiCount,
     handleGameStart,
@@ -288,7 +290,7 @@ export function WaitingRoom({
                     <Chat
                         messages={messages}
                         onSendMessage={onSendMessage}
-                        currentPlayerId={isHost ? 1 : (userProfile?.avatarId || 99)}
+                        currentPlayerId={myPlayerId ?? (isHost ? 1 : -1)}
                         currentPlayerName={userProfile?.name || 'Me'}
                     />
                 </div>

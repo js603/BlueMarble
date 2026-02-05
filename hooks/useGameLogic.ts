@@ -2,6 +2,7 @@ import { useCallback, useRef, MutableRefObject } from 'react';
 import { BoardCell, CellType, GameState, ModalState, ChatMessage, Player } from '../types';
 import { GOLDEN_KEYS, SALARY } from '../constants';
 import { sendGameMessage } from '../services/p2pService';
+import { playSfx } from '../services/audioService';
 
 export interface UseGameLogicProps {
     gameStateRef: MutableRefObject<GameState>;
@@ -199,18 +200,37 @@ export function useGameLogic({
                             const ownerIdx = newPlayers.findIndex(p => p.id === owner.id);
                             newPlayers[ownerIdx] = { ...owner, money: owner.money + rent };
                             addChatMessage('SYSTEM', 'System', `${updatedPlayer.name}님이 ${owner.name}님의 ${cell.name} 통행료 ${rent}만원을 지불했습니다.`);
+                            const shouldShowRentInfo = !player.isComputer;
                             if (cell.buildingLevel < 4) {
                                 const takeoverCost = cell.price * 2 + (cell.buildingPrices.slice(1, cell.buildingLevel + 1).reduce((a, b) => a + b, 0));
                                 if (updatedPlayer.money >= takeoverCost) {
                                     modal = {
                                         isOpen: true, type: 'TAKEOVER', title: '인수 공격 Power',
-                                        message: `${owner.name}님의 ${cell.name}을(를)\n강제로 인수하시겠습니까?`, cost: takeoverCost
+                                        message: `통행료 ₩${rent.toLocaleString()}을(를) 지불했습니다.\n${owner.name}님의 ${cell.name}을(를)\n강제로 인수하시겠습니까?`, cost: takeoverCost
+                                    };
+                                } else if (shouldShowRentInfo) {
+                                    modal = {
+                                        isOpen: true,
+                                        type: 'INFO',
+                                        title: '통행료 안내',
+                                        message: `${owner.name}님의 ${cell.name}에 도착했습니다.\n통행료 ₩${rent.toLocaleString()}을(를) 지불했습니다.`,
+                                        cost: rent
                                     };
                                 } else {
                                     return { ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p), waitingForNextTurn: true, isRolling: false, isMoving: false };
                                 }
                             } else {
-                                return { ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p), waitingForNextTurn: true, isRolling: false, isMoving: false };
+                                if (shouldShowRentInfo) {
+                                    modal = {
+                                        isOpen: true,
+                                        type: 'INFO',
+                                        title: '통행료 안내',
+                                        message: `${owner.name}님의 ${cell.name}에 도착했습니다.\n통행료 ₩${rent.toLocaleString()}을(를) 지불했습니다.`,
+                                        cost: rent
+                                    };
+                                } else {
+                                    return { ...prev, players: newPlayers.map(p => p.id === playerId ? updatedPlayer : p), waitingForNextTurn: true, isRolling: false, isMoving: false };
+                                }
                             }
                         } else {
                             const ownedCells = prev.board.filter(c => c.ownerId === updatedPlayer.id);
@@ -234,6 +254,7 @@ export function useGameLogic({
                 const card = GOLDEN_KEYS[Math.floor(Math.random() * GOLDEN_KEYS.length)];
                 const msg = `황금열쇠: ${card.name} - ${card.desc}`;
                 addChatMessage('SYSTEM', '황금열쇠', msg);
+                playSfx('key');
                 if (card.type === 'PAY') {
                     const amount = card.amount!;
                     const ownedCells = prev.board.filter(c => c.ownerId === updatedPlayer.id);
@@ -256,6 +277,7 @@ export function useGameLogic({
                     modal = { isOpen: true, type: 'INFO', title: '황금열쇠', message: msg };
                 } else if (card.type === 'ESCAPE') {
                     updatedPlayer.hasEscapeCard = true;
+                    playSfx('escape');
                     modal = { isOpen: true, type: 'INFO', title: '황금열쇠', message: msg };
                 } else if (card.type === 'MOVE') {
                     updatedPlayer.position = card.position!;
@@ -373,20 +395,33 @@ export function useGameLogic({
         const p = currentState.players[currentState.currentPlayerIndex];
         if (!p) return;
 
+        if (!isHost && currentState.isMultiplayer) {
+            const myId = currentState.myPlayerId;
+            if (myId && p.id === myId) {
+                sendGameMessage({
+                    type: 'PLAYER_ACTION',
+                    payload: { action: 'ROLL_DICE', playerId: myId }
+                });
+            }
+            return;
+        }
+
         let moveSteps = 0;
         let isTrapRelease = false;
         let isTrapStay = false;
-        let toIsland = false;
         let newDoubles = isDouble ? currentState.consecutiveDoubles + 1 : 0;
+        let toIsland = false;
 
-        if (newDoubles >= 3) toIsland = true;
-        else if (p.isTrapped > 0) {
+        if (p.isTrapped > 0) {
+            newDoubles = 0;
             if (isDouble || p.hasEscapeCard) {
                 isTrapRelease = true;
                 moveSteps = total;
             } else {
                 isTrapStay = true;
             }
+        } else if (newDoubles >= 3) {
+            toIsland = true;
         } else {
             moveSteps = total;
         }
@@ -505,11 +540,13 @@ export function useGameLogic({
                         newCell.ownerId = p.id;
                         newCell.buildingLevel = 0;
                         addChatMessage('SYSTEM', '부동산', `${p.name}님이 ${newCell.name}을(를) 구매했습니다.`);
+                        playSfx('buy');
                     } else {
                         newCell.buildingLevel += 1;
                         const bTypes = ['토지', '별장', '빌딩', '호텔', '랜드마크'];
                         const buildName = bTypes[newCell.buildingLevel] || '건물';
                         addChatMessage('SYSTEM', '부동산', `${p.name}님이 ${newCell.name}에 ${buildName}을(를) 올렸습니다!`);
+                        playSfx('build');
                     }
                     newBoard[p.position] = newCell;
                 } else if (prev.modal.type === 'TAKEOVER') {
@@ -521,6 +558,7 @@ export function useGameLogic({
                     const newCell = { ...currentCell, ownerId: p.id };
                     newBoard[p.position] = newCell;
                     addChatMessage('SYSTEM', '인수', `${p.name}님이 ${newCell.name}을(를) 강제 인수했습니다!`);
+                    playSfx('buy');
                 }
             }
             newPlayers[prev.currentPlayerIndex] = p;
