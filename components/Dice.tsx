@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, Suspense, Component, type ErrorInfo, type ReactNode, type FC } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Physics, useBox, usePlane } from '@react-three/cannon';
-import { useGLTF, Environment, ContactShadows, PerspectiveCamera } from '@react-three/drei';
+import { useGLTF, Environment, ContactShadows, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
 
 interface DiceProps {
@@ -11,6 +11,7 @@ interface DiceProps {
 
 // Global constant for dice size
 const DIE_SIZE = 0.7;
+const ROLL_AREA_RADIUS = 1.9;
 
 // Error Boundary for R3F components
 class DiceErrorBoundary extends Component<{ children: ReactNode, fallback: ReactNode }, { hasError: boolean }> {
@@ -140,10 +141,10 @@ const Die = ({ position, targetValue, rolling }: { position: [number, number, nu
     mass: 10,
     position,
     args: [DIE_SIZE, DIE_SIZE, DIE_SIZE],
-    friction: 0.1,
-    restitution: 0.5,
-    linearDamping: 0.05,
-    angularDamping: 0.05, // Reduced damping for more spin
+    friction: 0.35,
+    restitution: 0.2,
+    linearDamping: 0.15,
+    angularDamping: 0.12,
   }));
 
   const rollApplied = useRef(false);
@@ -154,27 +155,27 @@ const Die = ({ position, targetValue, rolling }: { position: [number, number, nu
       api.wakeUp();
 
       // Random starting spread
-      const startX = position[0] + (Math.random() - 0.5) * 2;
-      const startZ = (Math.random() - 0.5) * 3;
-      api.position.set(startX, 7, startZ);
+      const startX = position[0] + (Math.random() - 0.5) * 0.8;
+      const startZ = (Math.random() - 0.5) * 0.8;
+      api.position.set(startX, 6, startZ);
 
       // Increased initial horizontal speed
-      const velX = (Math.random() - 0.5) * 12;
-      const velY = -15; // Faster drop
-      const velZ = (Math.random() - 0.5) * 12;
+      const velX = (Math.random() - 0.5) * 5;
+      const velY = -10;
+      const velZ = (Math.random() - 0.5) * 5;
       api.velocity.set(velX, velY, velZ);
 
       // Apply a strong off-center impulse for torque (spin)
       const impulse: [number, number, number] = [
-        (Math.random() - 0.5) * 60,
-        20,
-        (Math.random() - 0.5) * 60
+        (Math.random() - 0.5) * 18,
+        8,
+        (Math.random() - 0.5) * 18
       ];
       // Point of offset is critical for torque. Max offset is DIE_SIZE/2 (0.35)
       const point: [number, number, number] = [
-        (Math.random() - 0.5) * 0.6,
-        0.3,
-        (Math.random() - 0.5) * 0.6
+        (Math.random() - 0.5) * (DIE_SIZE / 2),
+        DIE_SIZE / 3,
+        (Math.random() - 0.5) * (DIE_SIZE / 2)
       ];
       api.applyImpulse(impulse, point);
     } else if (!rolling && !rollApplied.current) {
@@ -213,11 +214,11 @@ const Ground = () => {
 };
 
 const InvisibleWalls = () => {
-  // Balanced walls to keep dice in the 4x4 area
-  usePlane(() => ({ position: [0, 0, -3], rotation: [0, 0, 0] }));
-  usePlane(() => ({ position: [0, 0, 3], rotation: [0, Math.PI, 0] }));
-  usePlane(() => ({ position: [-3.5, 0, 0], rotation: [0, Math.PI / 2, 0] }));
-  usePlane(() => ({ position: [3.5, 0, 0], rotation: [0, -Math.PI / 2, 0] }));
+  // Balanced walls to keep dice centered in the hub
+  usePlane(() => ({ position: [0, 0, -ROLL_AREA_RADIUS], rotation: [0, 0, 0] }));
+  usePlane(() => ({ position: [0, 0, ROLL_AREA_RADIUS], rotation: [0, Math.PI, 0] }));
+  usePlane(() => ({ position: [-ROLL_AREA_RADIUS, 0, 0], rotation: [0, Math.PI / 2, 0] }));
+  usePlane(() => ({ position: [ROLL_AREA_RADIUS, 0, 0], rotation: [0, -Math.PI / 2, 0] }));
   return null;
 };
 
@@ -225,8 +226,8 @@ export const Dice: FC<DiceProps> = ({ value, rolling }) => {
   return (
     <div className="dice-canvas-wrapper" style={{ width: '100%', height: '240px', position: 'relative' }}>
       <Canvas shadows>
-        {/* Adjusted camera for more depth perspective */}
-        <PerspectiveCamera makeDefault position={[0, 9, 10]} fov={30} />
+        {/* Top-down camera to match board perspective */}
+        <OrthographicCamera makeDefault position={[0, 10, 0]} rotation={[-Math.PI / 2, 0, 0]} zoom={70} />
         <ambientLight intensity={0.6} />
         <directionalLight
           position={[5, 15, 5]}
@@ -236,7 +237,7 @@ export const Dice: FC<DiceProps> = ({ value, rolling }) => {
         />
         <pointLight position={[-3, 4, 3]} intensity={1.2} color="#6366f1" />
 
-        <Physics gravity={[0, -40, 0]} defaultContactMaterial={{ restitution: 0.5, friction: 0.1 }}>
+        <Physics gravity={[0, -40, 0]} defaultContactMaterial={{ restitution: 0.2, friction: 0.35 }}>
           <Die position={[-1.2, 5, 0]} targetValue={value[0]} rolling={rolling} />
           <Die position={[1.2, 5, 0]} targetValue={value[1]} rolling={rolling} />
           <Ground />
