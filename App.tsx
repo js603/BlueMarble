@@ -68,6 +68,7 @@ export default function App() {
   const [gameState, setGameStateInternal] = useState<GameState>(createInitialState());
   const gameStateRef = useRef(gameState);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+  const playerActionRef = useRef<(action: 'ROLL_DICE' | 'NEXT_TURN', playerId: number) => void>(() => {});
 
   // 3. P2P Connection Hook
   const {
@@ -83,7 +84,8 @@ export default function App() {
     gameStateRef,
     setGameStateInternal,
     setChatMessages,
-    setShowLobby
+    setShowLobby,
+    playerActionRef
   });
 
   // 4. State Sync & Broadcast Wrapper
@@ -133,6 +135,18 @@ export default function App() {
     addChatMessage,
     isHost
   });
+
+  playerActionRef.current = (action, playerId) => {
+    const currentState = gameStateRef.current;
+    const currentPlayer = currentState.players[currentState.currentPlayerIndex];
+    if (!isHost || !currentPlayer || currentPlayer.id !== playerId) return;
+    if (action === 'ROLL_DICE') {
+      gameLogic.handleRollDice();
+    }
+    if (action === 'NEXT_TURN') {
+      gameLogic.nextTurn();
+    }
+  };
 
   // 7. Initialization & Audio
   useEffect(() => {
@@ -254,6 +268,17 @@ export default function App() {
 
     updateStateAndBroadcast(newState);
     setTimeout(() => broadcastGameState(newState), 100);
+
+    const updatedRoom: RoomInfo = {
+      ...currentRoom,
+      status: 'PLAYING',
+      currentPlayers: players.length,
+      aiCount: aiCount,
+      lastUpdated: Date.now()
+    };
+    setCurrentRoom(updatedRoom);
+    sendGameMessage({ type: 'ROOM_UPDATE', payload: updatedRoom });
+    advertiseRoom(updatedRoom);
   };
 
   // 10.4 Guest AI Count Sync
@@ -267,27 +292,23 @@ export default function App() {
   useEffect(() => {
     if (!isHost || !currentRoom) return;
 
-    // Only broadcast if we are in LOBBY (Waiting Room)
     if (gameState.gameStatus === 'LOBBY') {
+      if (currentRoom.aiCount === aiCount) return;
       const updatedRoom: RoomInfo = {
         ...currentRoom,
         aiCount: aiCount,
         lastUpdated: Date.now()
       };
-      // Update local state implicitly? No, currentRoom state in App depends on useP2PConnection.
-      // We need to update currentRoom in useP2PConnection too.
       setCurrentRoom(updatedRoom);
 
-      // Broadcast to peers in room
       sendGameMessage({
         type: 'ROOM_UPDATE',
         payload: updatedRoom
       });
 
-      // Also update Lobby Advertisement (so new joiners see it? Actually currentPlayers vs Max is what matters there)
       advertiseRoom(updatedRoom);
     }
-  }, [aiCount, isHost, gameState.gameStatus]); // Removing currentRoom from dependency to avoid loop if setCurrentRoom triggers effect?
+  }, [aiCount, isHost, gameState.gameStatus, currentRoom, setCurrentRoom]);
   // Actually if we update currentRoom, it might trigger this effect again.
   // We should be careful. 
   // Dependency: `aiCount`. When `aiCount` changes, we update room and broadcast.
@@ -513,6 +534,7 @@ export default function App() {
           peerNicknames={peerNicknames}
           isHost={isHost}
           currentRoom={currentRoom}
+          myPlayerId={gameState.myPlayerId}
           aiCount={aiCount}
           setAiCount={setAiCount}
           handleGameStart={handleGameStart}

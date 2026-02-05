@@ -373,6 +373,17 @@ export function useGameLogic({
         const p = currentState.players[currentState.currentPlayerIndex];
         if (!p) return;
 
+        if (!isHost && currentState.isMultiplayer) {
+            const myId = currentState.myPlayerId;
+            if (myId && p.id === myId) {
+                sendGameMessage({
+                    type: 'PLAYER_ACTION',
+                    payload: { action: 'ROLL_DICE', playerId: myId }
+                });
+            }
+            return;
+        }
+
         let moveSteps = 0;
         let isTrapRelease = false;
         let isTrapStay = false;

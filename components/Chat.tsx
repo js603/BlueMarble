@@ -47,7 +47,7 @@ export const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, currentPlay
         )}
         
         {messages.map((msg, idx) => {
-          const isMe = msg.senderName === currentPlayerName; 
+          const isMe = typeof msg.senderId === 'number' && msg.senderId === currentPlayerId;
           const isSystem = msg.senderId === 'SYSTEM';
           const isAI = msg.senderId === 'AI';
           
