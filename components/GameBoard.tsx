@@ -7,6 +7,7 @@ import { BuildingIcon } from './BuildingIcon';
 interface GameBoardProps {
     gameState: GameState;
     onCellClick: (index: number) => void;
+    onDiceRollComplete?: (values: [number, number]) => void;
 }
 
 const renderSpecialCell = (cell: BoardCell) => {
@@ -59,7 +60,7 @@ const getGridArea = (idx: number): string => {
     return '';
 };
 
-export function GameBoard({ gameState, onCellClick }: GameBoardProps) {
+export function GameBoard({ gameState, onCellClick, onDiceRollComplete }: GameBoardProps) {
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
     const myPlayerId = gameState.myPlayerId;
 
@@ -90,7 +91,7 @@ export function GameBoard({ gameState, onCellClick }: GameBoardProps) {
 
                     {/* Dice Display */}
                     <div className={`transform transition-all duration-500 ${gameState.isRolling ? 'scale-110' : 'scale-100'}`}>
-                        <Dice value={gameState.diceValue} rolling={gameState.isRolling} />
+                        <Dice value={gameState.diceValue} rolling={gameState.isRolling} onRollComplete={onDiceRollComplete} />
                     </div>
 
                     {/* Result Text */}

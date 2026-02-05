@@ -19,6 +19,7 @@ export interface UseGameLogicReturn {
     handleTeleport: (targetIndex: number) => void;
     movePlayerStepByStep: (playerId: number, steps: number, alreadyMoving?: boolean) => Promise<void>;
     handleRollDice: () => void;
+    handleDiceResult: (d1: number, d2: number) => void;
     nextTurn: () => void;
     handleModalAction: (confirmed: boolean) => void;
     handleModalActionWithLogic: (confirmed: boolean) => void;
@@ -388,10 +389,6 @@ export function useGameLogic({
         const currentState = gameStateRef.current;
         if (currentState.isRolling || currentState.isMoving || currentState.modal || currentState.waitingForNextTurn || currentState.isSelectingMoveTarget || currentState.pendingArrivalId || currentState.outstandingDebt > 0 || currentState.gameStatus !== 'PLAYING') return;
 
-        const d1 = Math.floor(Math.random() * 6) + 1;
-        const d2 = Math.floor(Math.random() * 6) + 1;
-        const total = d1 + d2;
-        const isDouble = d1 === d2;
         const p = currentState.players[currentState.currentPlayerIndex];
         if (!p) return;
 
@@ -405,6 +402,25 @@ export function useGameLogic({
             }
             return;
         }
+
+        setGameState(prev => ({
+            ...prev,
+            isRolling: true,
+            isMoving: false,
+            diceValue: [0, 0],
+            pendingMoveSteps: 0,
+            waitingForNextTurn: false
+        }));
+    }, [gameStateRef, setGameState, isHost]);
+
+    const handleDiceResult = useCallback((d1: number, d2: number) => {
+        const currentState = gameStateRef.current;
+        if (!currentState.isRolling || currentState.gameStatus !== 'PLAYING') return;
+
+        const total = d1 + d2;
+        const isDouble = d1 === d2;
+        const p = currentState.players[currentState.currentPlayerIndex];
+        if (!p) return;
 
         addChatMessage('SYSTEM', '주사위', `결과: ${d1} + ${d2} = ${total}`);
 
@@ -442,9 +458,10 @@ export function useGameLogic({
                     diceValue: [d1, d2],
                     players: newPlayers,
                     consecutiveDoubles: 0,
-                    isRolling: true,
+                    isRolling: false,
+                    isMoving: false,
                     pendingMoveSteps: 0,
-                    waitingForNextTurn: false
+                    waitingForNextTurn: true
                 };
             }
             if (isTrapStay) {
@@ -455,9 +472,10 @@ export function useGameLogic({
                     ...prev,
                     diceValue: [d1, d2],
                     players: newPlayers,
-                    isRolling: true,
+                    isRolling: false,
+                    isMoving: false,
                     pendingMoveSteps: 0,
-                    waitingForNextTurn: false
+                    waitingForNextTurn: true
                 };
             }
             if (isTrapRelease) {
@@ -478,11 +496,22 @@ export function useGameLogic({
                 diceValue: [d1, d2],
                 players: newPlayers,
                 consecutiveDoubles: newDoubles,
-                isRolling: true,
-                pendingMoveSteps: moveSteps
+                isRolling: false,
+                isMoving: moveSteps > 0,
+                pendingMoveSteps: 0,
+                waitingForNextTurn: moveSteps === 0
             };
         });
-    }, [gameStateRef, setGameState, addChatMessage]);
+
+        if (moveSteps > 0) {
+            setTimeout(() => {
+                const currentPlayer = gameStateRef.current.players[gameStateRef.current.currentPlayerIndex];
+                if (currentPlayer) {
+                    movePlayerStepByStep(currentPlayer.id, moveSteps, true);
+                }
+            }, 200);
+        }
+    }, [gameStateRef, setGameState, addChatMessage, movePlayerStepByStep]);
 
     const nextTurn = useCallback(() => {
         const s = gameStateRef.current;
@@ -618,6 +647,7 @@ export function useGameLogic({
         handleTeleport,
         movePlayerStepByStep,
         handleRollDice,
+        handleDiceResult,
         nextTurn,
         handleModalAction,
         handleModalActionWithLogic,
