@@ -20,7 +20,7 @@ import {
   joinLobby,
   leaveLobby
 } from './services/p2pService';
-import { initAudio, startBGM, stopBGM, toggleMute as toggleAudioMute } from './services/audioService';
+import { initAudio, startBGM, stopBGM, toggleMute as toggleAudioMute, playSfx } from './services/audioService';
 
 import { useGameLogic } from './hooks/useGameLogic';
 import { useP2PConnection } from './hooks/useP2PConnection';
@@ -68,6 +68,9 @@ export default function App() {
   const [gameState, setGameStateInternal] = useState<GameState>(createInitialState());
   const gameStateRef = useRef(gameState);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+  const playerActionRef = useRef<(action: 'ROLL_DICE' | 'NEXT_TURN', playerId: number) => void>(() => {});
+  const previousRollingRef = useRef(false);
+  const previousModalTitleRef = useRef<string | null>(null);
 
   // 3. P2P Connection Hook
   const {
@@ -83,7 +86,8 @@ export default function App() {
     gameStateRef,
     setGameStateInternal,
     setChatMessages,
-    setShowLobby
+    setShowLobby,
+    playerActionRef
   });
 
   // 4. State Sync & Broadcast Wrapper
@@ -134,11 +138,40 @@ export default function App() {
     isHost
   });
 
+  playerActionRef.current = (action, playerId) => {
+    const currentState = gameStateRef.current;
+    const currentPlayer = currentState.players[currentState.currentPlayerIndex];
+    if (!isHost || !currentPlayer || currentPlayer.id !== playerId) return;
+    if (action === 'ROLL_DICE') {
+      gameLogic.handleRollDice();
+    }
+    if (action === 'NEXT_TURN') {
+      gameLogic.nextTurn();
+    }
+  };
+
   // 7. Initialization & Audio
   useEffect(() => {
     initAudio();
     return () => stopBGM();
   }, []);
+
+  useEffect(() => {
+    if (gameState.isRolling && !previousRollingRef.current) {
+      playSfx('dice');
+    }
+    previousRollingRef.current = gameState.isRolling;
+  }, [gameState.isRolling]);
+
+  useEffect(() => {
+    const modalTitle = gameState.modal?.title || null;
+    if (modalTitle && modalTitle !== previousModalTitleRef.current) {
+      if (modalTitle.includes('통행료')) playSfx('rent');
+      if (modalTitle.includes('황금열쇠')) playSfx('key');
+      if (modalTitle.includes('탈출')) playSfx('escape');
+    }
+    previousModalTitleRef.current = modalTitle;
+  }, [gameState.modal?.title]);
 
   const toggleMute = () => {
     const newState = !isMuted;
@@ -254,6 +287,17 @@ export default function App() {
 
     updateStateAndBroadcast(newState);
     setTimeout(() => broadcastGameState(newState), 100);
+
+    const updatedRoom: RoomInfo = {
+      ...currentRoom,
+      status: 'PLAYING',
+      currentPlayers: players.length,
+      aiCount: aiCount,
+      lastUpdated: Date.now()
+    };
+    setCurrentRoom(updatedRoom);
+    sendGameMessage({ type: 'ROOM_UPDATE', payload: updatedRoom });
+    advertiseRoom(updatedRoom);
   };
 
   // 10.4 Guest AI Count Sync
@@ -267,27 +311,23 @@ export default function App() {
   useEffect(() => {
     if (!isHost || !currentRoom) return;
 
-    // Only broadcast if we are in LOBBY (Waiting Room)
     if (gameState.gameStatus === 'LOBBY') {
+      if (currentRoom.aiCount === aiCount) return;
       const updatedRoom: RoomInfo = {
         ...currentRoom,
         aiCount: aiCount,
         lastUpdated: Date.now()
       };
-      // Update local state implicitly? No, currentRoom state in App depends on useP2PConnection.
-      // We need to update currentRoom in useP2PConnection too.
       setCurrentRoom(updatedRoom);
 
-      // Broadcast to peers in room
       sendGameMessage({
         type: 'ROOM_UPDATE',
         payload: updatedRoom
       });
 
-      // Also update Lobby Advertisement (so new joiners see it? Actually currentPlayers vs Max is what matters there)
       advertiseRoom(updatedRoom);
     }
-  }, [aiCount, isHost, gameState.gameStatus]); // Removing currentRoom from dependency to avoid loop if setCurrentRoom triggers effect?
+  }, [aiCount, isHost, gameState.gameStatus, currentRoom, setCurrentRoom]);
   // Actually if we update currentRoom, it might trigger this effect again.
   // We should be careful. 
   // Dependency: `aiCount`. When `aiCount` changes, we update room and broadcast.
@@ -460,6 +500,11 @@ export default function App() {
       const currentP = currentS.players[currentS.currentPlayerIndex];
       if (!currentP) return;
 
+      if (currentP.money >= currentS.outstandingDebt) {
+        gameLogic.handlePayment(currentS.outstandingDebt, currentS.creditorId, '부채 정산');
+        return;
+      }
+
       const ownedCells = currentS.board.filter(c => c.ownerId === currentP.id);
       if (ownedCells.length > 0) {
         ownedCells.sort((a, b) => gameLogic.calculateSellPrice(b) - gameLogic.calculateSellPrice(a));
@@ -475,7 +520,7 @@ export default function App() {
 
   // 12. Render
   return (
-    <div className="relative h-[100dvh] w-full bg-slate-950 text-white overflow-hidden font-sans flex flex-col">
+    <div className="relative min-h-[100dvh] w-full bg-slate-950 text-white overflow-hidden font-sans flex flex-col">
       <div className="absolute inset-0 pointer-events-none opacity-20 bg-[url('https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg')] bg-cover bg-center grayscale mix-blend-overlay"></div>
       <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-slate-950/80 pointer-events-none z-0"></div>
 
@@ -513,6 +558,7 @@ export default function App() {
           peerNicknames={peerNicknames}
           isHost={isHost}
           currentRoom={currentRoom}
+          myPlayerId={gameState.myPlayerId}
           aiCount={aiCount}
           setAiCount={setAiCount}
           handleGameStart={handleGameStart}
