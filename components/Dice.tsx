@@ -12,9 +12,11 @@ interface DiceProps {
 
 // Global constant for dice size
 const DIE_SIZE = 0.35;
-const ROLL_AREA_HALF = 1.8;
-const WALL_THICKNESS = 0.2;
-const WALL_HEIGHT = 0.7;
+const ROLL_AREA_HALF = 1.7;
+const WALL_THICKNESS = 0.35;
+const WALL_HEIGHT = 1.6;
+const WALL_FRICTION = 0.6;
+const WALL_RESTITUTION = 0.08;
 
 // Error Boundary for R3F components
 class DiceErrorBoundary extends Component<{ children: ReactNode, fallback: ReactNode }, { hasError: boolean }> {
@@ -144,16 +146,16 @@ const Die = ({
   onSettled?: (value: number) => void;
 }) => {
   const [ref, api] = useBox(() => ({
-    mass: 8,
+    mass: 12,
     position,
     args: [DIE_SIZE, DIE_SIZE, DIE_SIZE],
-    friction: 0.45,
-    restitution: 0.28,
-    linearDamping: 0.2,
-    angularDamping: 0.25,
+    friction: 0.6,
+    restitution: 0.12,
+    linearDamping: 0.35,
+    angularDamping: 0.35,
     allowSleep: true,
-    sleepSpeedLimit: 0.2,
-    sleepTimeLimit: 0.5,
+    sleepSpeedLimit: 0.12,
+    sleepTimeLimit: 0.3,
   }));
 
   const groupRef = useRef<THREE.Group | null>(null);
@@ -182,26 +184,26 @@ const Die = ({
       settledRef.current = false;
       settleTimerRef.current = 0;
       api.wakeUp();
-      api.linearDamping.set(0.18);
-      api.angularDamping.set(0.16);
+      api.linearDamping.set(0.28);
+      api.angularDamping.set(0.26);
 
       // Reset to a fixed start position every roll
-      api.position.set(position[0], 6, position[2]);
+      api.position.set(position[0], 4.5, position[2]);
       api.rotation.set(0, 0, 0);
       api.velocity.set(0, 0, 0);
       api.angularVelocity.set(0, 0, 0);
 
       // Controlled initial roll force
-      const velX = (Math.random() - 0.5) * 4.2;
-      const velY = -7.5;
-      const velZ = (Math.random() - 0.5) * 4.2;
+      const velX = (Math.random() - 0.5) * 2.8;
+      const velY = -5.2;
+      const velZ = (Math.random() - 0.5) * 2.8;
       api.velocity.set(velX, velY, velZ);
 
       // Apply a strong off-center impulse for torque (spin)
       const impulse: [number, number, number] = [
-        (Math.random() - 0.5) * 14,
-        7,
-        (Math.random() - 0.5) * 14
+        (Math.random() - 0.5) * 8,
+        4.5,
+        (Math.random() - 0.5) * 8
       ];
       // Point of offset is critical for torque. Max offset is DIE_SIZE/2 (0.35)
       const point: [number, number, number] = [
@@ -221,9 +223,9 @@ const Die = ({
     if (!rolling || settledRef.current || !groupRef.current) return;
     const speed = velocityRef.current.length();
     const spin = angularVelocityRef.current.length();
-    if (speed < 0.12 && spin < 0.5) {
+    if (speed < 0.18 && spin < 0.7) {
       settleTimerRef.current += delta;
-      if (settleTimerRef.current > 0.35 && !settledRef.current) {
+      if (settleTimerRef.current > 0.25 && !settledRef.current) {
         settledRef.current = true;
         onSettled?.(getTopFaceValue(groupRef.current.quaternion));
       }
@@ -264,12 +266,13 @@ const Wall = ({ position, args }: { position: [number, number, number]; args: [n
   const [ref] = useBox(() => ({
     args,
     position,
-    type: 'Static'
+    type: 'Static',
+    material: { friction: WALL_FRICTION, restitution: WALL_RESTITUTION }
   }));
   return (
-    <mesh ref={ref as any} castShadow receiveShadow>
+    <mesh ref={ref as any} visible={false}>
       <boxGeometry args={args} />
-      <meshStandardMaterial color="#1f2937" transparent opacity={0.55} metalness={0.2} roughness={0.6} />
+      <meshStandardMaterial transparent opacity={0} />
     </mesh>
   );
 };
@@ -320,7 +323,7 @@ export const Dice: FC<DiceProps> = ({ value, rolling, onRollComplete }) => {
         />
         <pointLight position={[-3, 4, 3]} intensity={1.2} color="#6366f1" />
 
-        <Physics gravity={[0, -32, 0]} defaultContactMaterial={{ restitution: 0.28, friction: 0.45 }}>
+        <Physics gravity={[0, -26, 0]} defaultContactMaterial={{ restitution: 0.12, friction: 0.6 }}>
           <Die position={[-1.2, 5, 0]} rolling={rolling} onSettled={(dieValue) => handleDieSettled(0, dieValue)} />
           <Die position={[1.2, 5, 0]} rolling={rolling} onSettled={(dieValue) => handleDieSettled(1, dieValue)} />
           <Ground />
