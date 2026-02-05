@@ -1,4 +1,4 @@
-import React from 'react';
+import { } from 'react';
 import { RoomInfo, UserProfile, ChatMessage } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { PLAYER_COLORS } from '../constants';

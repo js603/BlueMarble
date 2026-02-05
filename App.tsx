@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { IntroModal } from './components/IntroModal';
 import { ActionModal } from './components/ActionModal';
 import { Lobby } from './components/Lobby';
@@ -68,7 +68,7 @@ export default function App() {
   const [gameState, setGameStateInternal] = useState<GameState>(createInitialState());
   const gameStateRef = useRef(gameState);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
-  const playerActionRef = useRef<(action: 'ROLL_DICE' | 'NEXT_TURN', playerId: number) => void>(() => {});
+  const playerActionRef = useRef<(action: 'ROLL_DICE' | 'NEXT_TURN', playerId: number) => void>(() => { });
   const previousRollingRef = useRef(false);
   const previousModalTitleRef = useRef<string | null>(null);
 

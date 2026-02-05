@@ -1,4 +1,4 @@
-import React from 'react';
+import { type FC } from 'react';
 import { ModalState } from '../types';
 
 interface ActionModalProps {
@@ -6,7 +6,7 @@ interface ActionModalProps {
   onAction: (confirmed: boolean) => void;
 }
 
-export const ActionModal: React.FC<ActionModalProps> = ({ modal, onAction }) => {
+export const ActionModal: FC<ActionModalProps> = ({ modal, onAction }) => {
   if (!modal.isOpen) return null;
 
   return (
@@ -15,17 +15,17 @@ export const ActionModal: React.FC<ActionModalProps> = ({ modal, onAction }) => 
         <div className={`${modal.type === 'SELL' ? 'bg-red-500' : 'bg-emerald-500'} p-4 text-center`}>
           <h3 className="text-xl font-black text-white uppercase tracking-wider shadow-sm">{modal.title}</h3>
         </div>
-        
+
         <div className="p-6 text-center">
           <p className="text-gray-700 mb-4 whitespace-pre-wrap font-medium">{modal.message}</p>
-          
+
           {modal.cost !== undefined && (
-             <div className={`mb-6 p-2 rounded-lg border ${modal.type === 'SELL' ? 'bg-red-50 border-red-200' : 'bg-yellow-100 border-yellow-300'}`}>
-                <span className="text-xs text-gray-500 block">{modal.type === 'SELL' ? '매각 예상 금액' : '필요 비용'}</span>
-                <span className={`text-2xl font-bold ${modal.type === 'SELL' ? 'text-red-600' : 'text-yellow-600'}`}>
-                   ₩ {modal.cost.toLocaleString()}
-                </span>
-             </div>
+            <div className={`mb-6 p-2 rounded-lg border ${modal.type === 'SELL' ? 'bg-red-50 border-red-200' : 'bg-yellow-100 border-yellow-300'}`}>
+              <span className="text-xs text-gray-500 block">{modal.type === 'SELL' ? '매각 예상 금액' : '필요 비용'}</span>
+              <span className={`text-2xl font-bold ${modal.type === 'SELL' ? 'text-red-600' : 'text-yellow-600'}`}>
+                ₩ {modal.cost.toLocaleString()}
+              </span>
+            </div>
           )}
 
           {modal.isComputerAction && (
@@ -54,11 +54,10 @@ export const ActionModal: React.FC<ActionModalProps> = ({ modal, onAction }) => 
                 <button
                   onClick={() => onAction(true)}
                   disabled={modal.isComputerAction}
-                  className={`flex-1 py-3 text-white font-bold rounded-lg shadow-lg transition-transform hover:scale-105 ${
-                    modal.type === 'SELL' 
-                    ? 'bg-red-500 hover:bg-red-600' 
+                  className={`flex-1 py-3 text-white font-bold rounded-lg shadow-lg transition-transform hover:scale-105 ${modal.type === 'SELL'
+                    ? 'bg-red-500 hover:bg-red-600'
                     : 'bg-emerald-500 hover:bg-emerald-600'
-                  }`}
+                    }`}
                 >
                   {modal.type === 'SELL' ? '매각' : '승인'}
                 </button>

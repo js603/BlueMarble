@@ -1,289 +1,258 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, Suspense, Component, type ErrorInfo, type ReactNode, type FC } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { Physics, useBox, usePlane } from '@react-three/cannon';
+import { useGLTF, Environment, ContactShadows, PerspectiveCamera } from '@react-three/drei';
+import * as THREE from 'three';
 
 interface DiceProps {
   value: [number, number];
   rolling: boolean;
 }
 
-type RenderMode = 'loading' | 'webgl' | 'fallback';
+// Global constant for dice size
+const DIE_SIZE = 0.7;
 
-export const Dice: React.FC<DiceProps> = ({ value, rolling }) => {
-  const [renderMode, setRenderMode] = useState<RenderMode>('loading');
-  const renderModeRef = useRef<RenderMode>('loading');
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const engineRef = useRef<{
-    updateRoll: (isRolling: boolean, values: [number, number]) => void;
-    dispose: () => void;
-  } | null>(null);
-  const previousRollingRef = useRef(false);
+// Error Boundary for R3F components
+class DiceErrorBoundary extends Component<{ children: ReactNode, fallback: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode, fallback: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
-  const updateRenderMode = (mode: RenderMode) => {
-    renderModeRef.current = mode;
-    setRenderMode(mode);
-  };
+  static getDerivedStateFromError(_: Error) {
+    return { hasError: true };
+  }
 
-  useEffect(() => {
-    let isMounted = true;
-    const fallbackTimer = window.setTimeout(() => {
-      if (isMounted && renderModeRef.current === 'loading') {
-        updateRenderMode('fallback');
-      }
-    }, 1500);
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.warn("Dice model failed to load, falling back to procedural box:", error.message);
+  }
 
-    if (typeof window !== 'undefined') {
-      const canvas = document.createElement('canvas');
-      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-      if (!gl) {
-        window.clearTimeout(fallbackTimer);
-        updateRenderMode('fallback');
-        return () => {
-          isMounted = false;
-        };
-      }
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
+// Map dice value to Euler rotations (in radians)
+const getRotationForValue = (val: number): [number, number, number] => {
+  switch (val) {
+    case 1: return [0, 0, 0];
+    case 2: return [0, 0, -Math.PI / 2];
+    case 3: return [-Math.PI / 2, 0, 0];
+    case 4: return [Math.PI / 2, 0, 0];
+    case 5: return [0, 0, Math.PI / 2];
+    case 6: return [Math.PI, 0, 0];
+    default: return [0, 0, 0];
+  }
+};
+
+const DieModel = ({ targetValue, rolling }: { targetValue: number, rolling: boolean }) => {
+  const { scene } = useGLTF('/dice/scene.gltf') as any;
+
+  const model = useMemo(() => {
+    if (!scene) return null;
+    const clone = scene.clone();
+
+    // Calculate bounding box and scale to fit DIE_SIZE
+    const box = new THREE.Box3().setFromObject(clone);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxSide = Math.max(size.x, size.y, size.z);
+
+    if (maxSide > 0) {
+      const scale = DIE_SIZE / maxSide;
+      clone.scale.set(scale, scale, scale);
+
+      // Center the clone within its local space
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      clone.position.sub(center.multiplyScalar(scale));
     }
 
-    const init = async () => {
-      Promise.all([
-        import('../vendor/three.module.js'),
-        import('../vendor/cannon-es.js')
-      ])
-        .then(([threeModule, CANNON]) => {
-          if (!isMounted || !containerRef.current) return;
-          window.clearTimeout(fallbackTimer);
-          const {
-            Scene,
-            PerspectiveCamera,
-            WebGLRenderer,
-            Color,
-            Mesh,
-            BoxGeometry,
-            MeshStandardMaterial,
-            AmbientLight,
-            DirectionalLight,
-            PlaneGeometry,
-            MeshBasicMaterial,
-            CanvasTexture,
-            Vector3,
-            Quaternion,
-            Euler
-          } = threeModule;
+    return clone;
+  }, [scene]);
 
-          const width = containerRef.current.clientWidth;
-          const height = containerRef.current.clientHeight;
+  useEffect(() => {
+    if (model && !rolling) {
+      const rotations = getRotationForValue(targetValue);
+      model.rotation.set(...rotations);
+    }
+  }, [model, targetValue, rolling]);
 
-          const scene = new Scene();
-          scene.background = new Color(0x0f172a);
+  if (!model) return null;
+  return <primitive object={model} />;
+};
 
-          const camera = new PerspectiveCamera(40, width / height, 0.1, 100);
-          camera.position.set(0, 6, 10);
-          camera.lookAt(0, 0, 0);
-
-          const renderer = new WebGLRenderer({ antialias: true, alpha: true });
-          renderer.setSize(width, height);
-          renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-          containerRef.current.innerHTML = '';
-          containerRef.current.appendChild(renderer.domElement);
-
-          const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
-          world.broadphase = new CANNON.SAPBroadphase(world);
-          world.allowSleep = true;
-
-          const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
-          groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-          world.addBody(groundBody);
-
-          const light = new AmbientLight(0xffffff, 0.6);
-          const dir = new DirectionalLight(0xffffff, 1);
-          dir.position.set(5, 10, 2);
-          scene.add(light, dir);
-
-          const ground = new Mesh(new PlaneGeometry(30, 30), new MeshBasicMaterial({ visible: false }));
-          ground.rotation.x = -Math.PI / 2;
-          scene.add(ground);
-
-          const createFaceTexture = (label: number) => {
-            const canvas = document.createElement('canvas');
-            canvas.width = 128;
-            canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.fillStyle = '#f8fafc';
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
-              ctx.fillStyle = '#0f172a';
-              ctx.font = 'bold 72px Noto Sans KR, sans-serif';
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillText(label.toString(), canvas.width / 2, canvas.height / 2);
-            }
-            return new CanvasTexture(canvas);
-          };
-
-          const materials = [2, 5, 1, 6, 3, 4].map(
-            face =>
-              new MeshStandardMaterial({
-                map: createFaceTexture(face),
-                roughness: 0.4,
-                metalness: 0.1
-              })
-          );
-
-          const diceGeometry = new BoxGeometry(1.6, 1.6, 1.6);
-
-          const diceBodies: any[] = [];
-          const diceMeshes: any[] = [];
-
-          const createDie = (offsetX: number) => {
-            const mesh = new Mesh(diceGeometry, materials);
-            mesh.castShadow = true;
-            mesh.position.set(offsetX, 2, 0);
-            scene.add(mesh);
-
-            const body = new CANNON.Body({
-              mass: 1.2,
-              shape: new CANNON.Box(new CANNON.Vec3(0.8, 0.8, 0.8)),
-              position: new CANNON.Vec3(offsetX, 2, 0)
-            });
-            body.linearDamping = 0.2;
-            body.angularDamping = 0.3;
-            world.addBody(body);
-
-            diceMeshes.push(mesh);
-            diceBodies.push(body);
-          };
-
-          createDie(-1.5);
-          createDie(1.5);
-
-          const valueToQuaternion = (faceValue: number) => {
-            const q = new Quaternion();
-            const rotations: Record<number, [number, number, number]> = {
-              1: [0, 0, 0],
-              2: [0, 0, -Math.PI / 2],
-              3: [-Math.PI / 2, 0, 0],
-              4: [Math.PI / 2, 0, 0],
-              5: [0, 0, Math.PI / 2],
-              6: [Math.PI, 0, 0]
-            };
-            const [x, y, z] = rotations[faceValue] || [0, 0, 0];
-            q.setFromEuler(new Euler(x, y, z));
-            return q;
-          };
-
-          const updateRoll = (isRolling: boolean, values: [number, number]) => {
-            if (isRolling) {
-              diceBodies.forEach((body, idx) => {
-                body.wakeUp();
-                body.position.set(idx === 0 ? -1.5 : 1.5, 3, 0);
-                body.velocity.set(Math.random() * 2 - 1, 4 + Math.random() * 2, Math.random() * 2 - 1);
-                body.angularVelocity.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
-              });
-            } else {
-              diceBodies.forEach((body, idx) => {
-                body.velocity.setZero();
-                body.angularVelocity.setZero();
-                const targetQuat = valueToQuaternion(values[idx]);
-                body.quaternion.set(targetQuat.x, targetQuat.y, targetQuat.z, targetQuat.w);
-              });
-            }
-          };
-
-          let lastTime = performance.now();
-          const step = () => {
-            const now = performance.now();
-            const delta = Math.min((now - lastTime) / 1000, 0.033);
-            lastTime = now;
-            world.step(1 / 60, delta, 3);
-
-            diceBodies.forEach((body, idx) => {
-              const mesh = diceMeshes[idx];
-              mesh.position.copy(body.position as any);
-              mesh.quaternion.copy(body.quaternion as any);
-            });
-
-            renderer.render(scene, camera);
-            requestAnimationFrame(step);
-          };
-
-          requestAnimationFrame(step);
-
-          const onResize = () => {
-            if (!containerRef.current) return;
-            const nextWidth = containerRef.current.clientWidth;
-            const nextHeight = containerRef.current.clientHeight;
-            camera.aspect = nextWidth / nextHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(nextWidth, nextHeight);
-          };
-
-          window.addEventListener('resize', onResize);
-
-          engineRef.current = {
-            updateRoll,
-            dispose: () => {
-              window.removeEventListener('resize', onResize);
-              renderer.dispose();
-              diceGeometry.dispose();
-              materials.forEach((mat: any) => mat.dispose?.());
-            }
-          };
-          updateRenderMode('webgl');
-        })
-        .catch(() => {
-          if (isMounted) {
-            window.clearTimeout(fallbackTimer);
-            updateRenderMode('fallback');
-          }
-        });
-    };
-
-    init();
-
-    return () => {
-      isMounted = false;
-      window.clearTimeout(fallbackTimer);
-      engineRef.current?.dispose();
-      engineRef.current = null;
-    };
+const DieFallback = ({ targetValue, rolling }: { targetValue: number, rolling: boolean }) => {
+  const textures = useMemo(() => {
+    return [2, 5, 1, 6, 3, 4].map(label => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillRect(0, 0, 256, 256);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      // @ts-ignore
+      if (ctx.roundRect) ctx.roundRect(10, 10, 236, 236, 40);
+      else ctx.rect(10, 10, 236, 236);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.fillStyle = '#1e1b4b';
+      ctx.font = 'bold 150px "Inter", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.1)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetX = 4;
+      ctx.shadowOffsetY = 4;
+      ctx.fillText(label.toString(), 128, 128);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.anisotropy = 8;
+      return tex;
+    });
   }, []);
 
+  const meshRef = useRef<THREE.Mesh>(null);
+
   useEffect(() => {
-    if (!engineRef.current || renderMode !== 'webgl') return;
-    if (rolling !== previousRollingRef.current) {
-      engineRef.current.updateRoll(rolling, value);
-      previousRollingRef.current = rolling;
-    } else if (!rolling) {
-      engineRef.current.updateRoll(false, value);
+    if (meshRef.current && !rolling) {
+      const rotations = getRotationForValue(targetValue);
+      meshRef.current.rotation.set(...rotations);
     }
-  }, [rolling, value, renderMode]);
-
-
-  if (renderMode === 'fallback') {
-    return (
-      <div className="flex gap-3 sm:gap-4 p-3 sm:p-4 bg-nebula-card/50 rounded-xl border border-white/10 backdrop-blur-sm">
-        {value.map((val, idx) => (
-          <div
-            key={idx}
-            className={`w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-lg shadow-[0_0_10px_rgba(255,255,255,0.5)] flex items-center justify-center text-2xl font-bold text-nebula-bg transition-transform duration-100 ${rolling ? 'animate-bounce-short' : ''}`}
-          >
-            {val}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (renderMode === 'loading') {
-    return (
-      <div className="flex gap-3 sm:gap-4 p-3 sm:p-4 bg-nebula-card/50 rounded-xl border border-white/10 backdrop-blur-sm">
-        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-slate-800/80 animate-pulse" />
-        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-slate-800/80 animate-pulse" />
-      </div>
-    );
-  }
+  }, [targetValue, rolling]);
 
   return (
-    <div className="dice-canvas-wrapper">
-      <div ref={containerRef} className="dice-canvas" />
+    <mesh ref={meshRef} castShadow receiveShadow>
+      <boxGeometry args={[DIE_SIZE, DIE_SIZE, DIE_SIZE]} />
+      {textures.map((tex, i) => (
+        <meshStandardMaterial key={i} attach={`material-${i}`} map={tex} roughness={0.1} metalness={0.1} />
+      ))}
+    </mesh>
+  );
+};
+
+const Die = ({ position, targetValue, rolling }: { position: [number, number, number], targetValue: number, rolling: boolean }) => {
+  const [ref, api] = useBox(() => ({
+    mass: 10,
+    position,
+    args: [DIE_SIZE, DIE_SIZE, DIE_SIZE],
+    friction: 0.1,
+    restitution: 0.5,
+    linearDamping: 0.05,
+    angularDamping: 0.05, // Reduced damping for more spin
+  }));
+
+  const rollApplied = useRef(false);
+
+  useEffect(() => {
+    if (rolling) {
+      rollApplied.current = false;
+      api.wakeUp();
+
+      // Random starting spread
+      const startX = position[0] + (Math.random() - 0.5) * 2;
+      const startZ = (Math.random() - 0.5) * 3;
+      api.position.set(startX, 7, startZ);
+
+      // Increased initial horizontal speed
+      const velX = (Math.random() - 0.5) * 12;
+      const velY = -15; // Faster drop
+      const velZ = (Math.random() - 0.5) * 12;
+      api.velocity.set(velX, velY, velZ);
+
+      // Apply a strong off-center impulse for torque (spin)
+      const impulse: [number, number, number] = [
+        (Math.random() - 0.5) * 60,
+        20,
+        (Math.random() - 0.5) * 60
+      ];
+      // Point of offset is critical for torque. Max offset is DIE_SIZE/2 (0.35)
+      const point: [number, number, number] = [
+        (Math.random() - 0.5) * 0.6,
+        0.3,
+        (Math.random() - 0.5) * 0.6
+      ];
+      api.applyImpulse(impulse, point);
+    } else if (!rolling && !rollApplied.current) {
+      api.velocity.set(0, 0, 0);
+      api.angularVelocity.set(0, 0, 0);
+      const rotations = getRotationForValue(targetValue);
+      api.rotation.set(...rotations);
+      api.position.set(position[0], DIE_SIZE / 2, 0);
+      rollApplied.current = true;
+    }
+  }, [rolling, api, targetValue, position]);
+
+  return (
+    <group ref={ref as any}>
+      <DiceErrorBoundary fallback={<DieFallback targetValue={targetValue} rolling={rolling} />}>
+        <Suspense fallback={<DieFallback targetValue={targetValue} rolling={rolling} />}>
+          <DieModel targetValue={targetValue} rolling={rolling} />
+        </Suspense>
+      </DiceErrorBoundary>
+    </group>
+  );
+};
+
+const Ground = () => {
+  const [ref] = usePlane(() => ({
+    rotation: [-Math.PI / 2, 0, 0],
+    position: [0, 0, 0],
+  }));
+
+  return (
+    <mesh ref={ref as any} receiveShadow>
+      <planeGeometry args={[100, 100]} />
+      <shadowMaterial transparent opacity={0.4} />
+    </mesh>
+  );
+};
+
+const InvisibleWalls = () => {
+  // Balanced walls to keep dice in the 4x4 area
+  usePlane(() => ({ position: [0, 0, -3], rotation: [0, 0, 0] }));
+  usePlane(() => ({ position: [0, 0, 3], rotation: [0, Math.PI, 0] }));
+  usePlane(() => ({ position: [-3.5, 0, 0], rotation: [0, Math.PI / 2, 0] }));
+  usePlane(() => ({ position: [3.5, 0, 0], rotation: [0, -Math.PI / 2, 0] }));
+  return null;
+};
+
+export const Dice: FC<DiceProps> = ({ value, rolling }) => {
+  return (
+    <div className="dice-canvas-wrapper" style={{ width: '100%', height: '240px', position: 'relative' }}>
+      <Canvas shadows>
+        {/* Adjusted camera for more depth perspective */}
+        <PerspectiveCamera makeDefault position={[0, 9, 10]} fov={30} />
+        <ambientLight intensity={0.6} />
+        <directionalLight
+          position={[5, 15, 5]}
+          intensity={1.8}
+          castShadow
+          shadow-mapSize={[1024, 1024]}
+        />
+        <pointLight position={[-3, 4, 3]} intensity={1.2} color="#6366f1" />
+
+        <Physics gravity={[0, -40, 0]} defaultContactMaterial={{ restitution: 0.5, friction: 0.1 }}>
+          <Die position={[-1.2, 5, 0]} targetValue={value[0]} rolling={rolling} />
+          <Die position={[1.2, 5, 0]} targetValue={value[1]} rolling={rolling} />
+          <Ground />
+          <InvisibleWalls />
+        </Physics>
+
+        <Environment preset="city" />
+        <ContactShadows resolution={1024} scale={15} blur={2.5} opacity={0.3} far={10} color="#000000" />
+      </Canvas>
+      <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+        {!rolling && value[0] === 0 && (
+          <div className="text-white/30 text-[10px] font-bold tracking-widest animate-pulse uppercase">
+            Ready
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React from 'react';
+import { } from 'react';
 import { BoardCell, CellType, GameState, Player } from '../types';
 import { Dice } from './Dice';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -166,7 +166,7 @@ export function GameBoard({ gameState, onCellClick }: GameBoardProps) {
                                 {playersHere.map(p => (
                                     <div key={p.id} className="relative z-10 transform translate-y-2">
                                         <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border border-white shadow-sm bg-slate-800 flex items-center justify-center overflow-hidden">
-                                            <PlayerAvatar playerId={p.id} color={p.color} isActive={false} avatarId={p.avatarId} size="sm" />
+                                            <PlayerAvatar playerId={p.id} color={p.color} isActive={false} avatarId={p.avatarId} />
                                         </div>
                                     </div>
                                 ))}

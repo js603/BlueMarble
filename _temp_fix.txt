@@ -1,5 +1,0 @@
-              </div>
-            </div>
-          )}
-
-          {/* --- Sliding Sidebar (Right Drawer - Only during PLAYING) --- */}

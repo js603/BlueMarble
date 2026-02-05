@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type FC } from 'react';
 import { RoomInfo, UserProfile, ChatMessage } from '../types';
 import { Chat } from './Chat';
 
@@ -10,7 +10,7 @@ interface LobbyProps {
     onSendMessage: (text: string) => void;
 }
 
-export const Lobby: React.FC<LobbyProps> = ({ userProfile, onJoinRoom, rooms: receivedRooms, messages, onSendMessage }) => {
+export const Lobby: FC<LobbyProps> = ({ userProfile, onJoinRoom, rooms: receivedRooms, messages, onSendMessage }) => {
     const [rooms, setRooms] = useState<RoomInfo[]>([]);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
@@ -210,7 +210,8 @@ export const Lobby: React.FC<LobbyProps> = ({ userProfile, onJoinRoom, rooms: re
                             <Chat
                                 messages={messages}
                                 onSendMessage={onSendMessage}
-                                currentUserId={99999} // Lobby treats everyone as 'external' except self, handled by Chat internals
+                                currentPlayerId={99999}
+                                currentPlayerName={userProfile.name}
                             />
                         </div>
                     </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, type FC, type FormEvent } from 'react';
 import { PLAYER_COLORS, AVATAR_LABELS } from '../constants';
 import { PlayerAvatar } from './PlayerAvatar';
 import { UserProfile } from '../types';
@@ -7,11 +7,11 @@ interface IntroModalProps {
   onComplete: (profile: UserProfile) => void;
 }
 
-export const IntroModal: React.FC<IntroModalProps> = ({ onComplete }) => {
+export const IntroModal: FC<IntroModalProps> = ({ onComplete }) => {
   const [name, setName] = useState('');
   const [selectedAvatarIdx, setSelectedAvatarIdx] = useState(0);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
@@ -54,20 +54,19 @@ export const IntroModal: React.FC<IntroModalProps> = ({ onComplete }) => {
                   key={idx}
                   type="button"
                   onClick={() => setSelectedAvatarIdx(idx)}
-                  className={`aspect-square rounded-xl flex flex-col items-center justify-center p-2 transition-all border-2 relative ${
-                    selectedAvatarIdx === idx 
-                    ? 'bg-emerald-900/50 border-emerald-400 scale-105 shadow-[0_0_15px_rgba(52,211,153,0.5)]' 
+                  className={`aspect-square rounded-xl flex flex-col items-center justify-center p-2 transition-all border-2 relative ${selectedAvatarIdx === idx
+                    ? 'bg-emerald-900/50 border-emerald-400 scale-105 shadow-[0_0_15px_rgba(52,211,153,0.5)]'
                     : 'bg-slate-900 border-slate-700 hover:border-slate-500 opacity-60 hover:opacity-100'
-                  }`}
+                    }`}
                 >
                   <div className="w-8 h-8 sm:w-10 sm:h-10">
-                     <PlayerAvatar playerId={idx + 1} color={color} isActive={false} avatarId={idx} />
+                    <PlayerAvatar playerId={idx + 1} color={color} isActive={false} avatarId={idx} />
                   </div>
                   <span className="text-[9px] mt-1 text-gray-400">{AVATAR_LABELS[idx]}</span>
-                  
+
                   {selectedAvatarIdx === idx && (
                     <div className="absolute -top-2 -right-2 bg-emerald-500 text-black rounded-full p-0.5 shadow-sm">
-                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                     </div>
                   )}
                 </button>

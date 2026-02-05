@@ -1,4 +1,4 @@
-import React from 'react';
+import { } from 'react';
 import { GameState, UserProfile } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 
@@ -43,7 +43,7 @@ export function GameHeader({
                     return (
                         <div key={p.id} className={`flex items-center gap-2 p-1.5 pr-4 rounded-full border shadow-sm transition-all min-w-fit shrink-0 ${isActive ? 'bg-slate-800 border-emerald-500 ring-1 ring-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-slate-900/50 border-white/10'} ${p.isBankrupt ? 'grayscale opacity-50' : ''}`}>
                             <div className="w-8 h-8 rounded-full bg-slate-950 border-2 flex items-center justify-center relative" style={{ borderColor: p.color }}>
-                                <PlayerAvatar playerId={p.id} color={p.color} isActive={isActive} size="sm" avatarId={p.avatarId} />
+                                <PlayerAvatar playerId={p.id} color={p.color} isActive={isActive} avatarId={p.avatarId} />
                                 {isActive && <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-pulse border-2 border-slate-900"></div>}
                             </div>
                             <div className="flex flex-col leading-none">
