@@ -22,16 +22,47 @@ export const Dice: React.FC<DiceProps> = ({ value, rolling }) => {
     }
   }, [rolling, value]);
 
-  const DiceCube = ({ val }: { val: number }) => (
-    <div className={`w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-lg shadow-[0_0_10px_rgba(255,255,255,0.5)] flex items-center justify-center text-2xl font-bold text-nebula-bg transition-transform duration-100 ${rolling ? 'animate-bounce-short' : ''}`}>
-      {val}
+  const faceTransforms = [
+    'rotateY(0deg) translateZ(18px)',
+    'rotateY(90deg) translateZ(18px)',
+    'rotateY(180deg) translateZ(18px)',
+    'rotateY(-90deg) translateZ(18px)',
+    'rotateX(90deg) translateZ(18px)',
+    'rotateX(-90deg) translateZ(18px)'
+  ];
+
+  const valueRotation: Record<number, string> = {
+    1: 'rotateX(0deg) rotateY(0deg)',
+    2: 'rotateX(0deg) rotateY(-90deg)',
+    3: 'rotateX(0deg) rotateY(90deg)',
+    4: 'rotateX(0deg) rotateY(180deg)',
+    5: 'rotateX(-90deg) rotateY(0deg)',
+    6: 'rotateX(90deg) rotateY(0deg)'
+  };
+
+  const DiceCube = ({ val, isRolling }: { val: number; isRolling: boolean }) => (
+    <div className="dice-scene">
+      <div
+        className={`dice-cube ${isRolling ? 'dice-rolling' : ''}`}
+        style={{ transform: isRolling ? undefined : valueRotation[val] }}
+      >
+        {[1, 2, 3, 4, 5, 6].map((face, idx) => (
+          <div
+            key={face}
+            className="dice-face"
+            style={{ transform: faceTransforms[idx] }}
+          >
+            {face}
+          </div>
+        ))}
+      </div>
     </div>
   );
 
   return (
-    <div className="flex gap-4 p-4 bg-nebula-card/50 rounded-xl border border-white/10 backdrop-blur-sm">
-      <DiceCube val={displayValue[0]} />
-      <DiceCube val={displayValue[1]} />
+    <div className="flex gap-3 sm:gap-4 p-3 sm:p-4 bg-nebula-card/50 rounded-xl border border-white/10 backdrop-blur-sm">
+      <DiceCube val={displayValue[0]} isRolling={rolling} />
+      <DiceCube val={displayValue[1]} isRolling={rolling} />
     </div>
   );
 };
