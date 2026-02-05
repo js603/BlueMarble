@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, Suspense, Component, type ErrorInfo, type ReactNode, type FC } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { useEffect, useMemo, useRef, Suspense, Component, type ErrorInfo, type ReactNode, type FC, useCallback } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { Physics, useBox, usePlane } from '@react-three/cannon';
 import { useGLTF, Environment, ContactShadows, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
@@ -7,11 +7,14 @@ import * as THREE from 'three';
 interface DiceProps {
   value: [number, number];
   rolling: boolean;
+  onRollComplete?: (values: [number, number]) => void;
 }
 
 // Global constant for dice size
 const DIE_SIZE = 0.35;
-const ROLL_AREA_RADIUS = 1.9;
+const ROLL_AREA_HALF = 1.8;
+const WALL_THICKNESS = 0.2;
+const WALL_HEIGHT = 0.7;
 
 // Error Boundary for R3F components
 class DiceErrorBoundary extends Component<{ children: ReactNode, fallback: ReactNode }, { hasError: boolean }> {
@@ -107,37 +110,80 @@ const DieFallback = () => {
   );
 };
 
-const VALUE_ROTATIONS: Record<number, [number, number, number]> = {
-  1: [0, 0, 0],
-  2: [0, 0, Math.PI / 2],
-  3: [-Math.PI / 2, 0, 0],
-  4: [Math.PI / 2, 0, 0],
-  5: [0, 0, -Math.PI / 2],
-  6: [Math.PI, 0, 0]
+const FACE_NORMALS: Array<{ value: number; normal: THREE.Vector3 }> = [
+  { value: 1, normal: new THREE.Vector3(0, 1, 0) },
+  { value: 6, normal: new THREE.Vector3(0, -1, 0) },
+  { value: 2, normal: new THREE.Vector3(1, 0, 0) },
+  { value: 5, normal: new THREE.Vector3(-1, 0, 0) },
+  { value: 3, normal: new THREE.Vector3(0, 0, 1) },
+  { value: 4, normal: new THREE.Vector3(0, 0, -1) }
+];
+
+const getTopFaceValue = (quaternion: THREE.Quaternion) => {
+  const worldUp = new THREE.Vector3(0, 1, 0);
+  let bestValue = 1;
+  let bestDot = -Infinity;
+  FACE_NORMALS.forEach(face => {
+    const faceNormal = face.normal.clone().applyQuaternion(quaternion);
+    const dot = faceNormal.dot(worldUp);
+    if (dot > bestDot) {
+      bestDot = dot;
+      bestValue = face.value;
+    }
+  });
+  return bestValue;
 };
 
-const Die = ({ position, rolling, value }: { position: [number, number, number], rolling: boolean, value: number }) => {
+const Die = ({
+  position,
+  rolling,
+  onSettled
+}: {
+  position: [number, number, number];
+  rolling: boolean;
+  onSettled?: (value: number) => void;
+}) => {
   const [ref, api] = useBox(() => ({
-    mass: 25,
+    mass: 8,
     position,
     args: [DIE_SIZE, DIE_SIZE, DIE_SIZE],
-    friction: 0.6,
-    restitution: 0.05,
-    linearDamping: 0.25,
-    angularDamping: 0.2,
+    friction: 0.45,
+    restitution: 0.28,
+    linearDamping: 0.2,
+    angularDamping: 0.25,
     allowSleep: true,
-    sleepSpeedLimit: 0.15,
-    sleepTimeLimit: 0.6,
+    sleepSpeedLimit: 0.2,
+    sleepTimeLimit: 0.5,
   }));
 
+  const groupRef = useRef<THREE.Group | null>(null);
   const rollApplied = useRef(false);
+  const settledRef = useRef(false);
+  const settleTimerRef = useRef(0);
+  const velocityRef = useRef(new THREE.Vector3());
+  const angularVelocityRef = useRef(new THREE.Vector3());
+
+  useEffect(() => {
+    const unsubVelocity = api.velocity.subscribe(([x, y, z]) => {
+      velocityRef.current.set(x, y, z);
+    });
+    const unsubAngular = api.angularVelocity.subscribe(([x, y, z]) => {
+      angularVelocityRef.current.set(x, y, z);
+    });
+    return () => {
+      unsubVelocity();
+      unsubAngular();
+    };
+  }, [api.angularVelocity, api.velocity]);
 
   useEffect(() => {
     if (rolling) {
       rollApplied.current = false;
+      settledRef.current = false;
+      settleTimerRef.current = 0;
       api.wakeUp();
       api.linearDamping.set(0.18);
-      api.angularDamping.set(0.14);
+      api.angularDamping.set(0.16);
 
       // Reset to a fixed start position every roll
       api.position.set(position[0], 6, position[2]);
@@ -146,16 +192,16 @@ const Die = ({ position, rolling, value }: { position: [number, number, number],
       api.angularVelocity.set(0, 0, 0);
 
       // Controlled initial roll force
-      const velX = (Math.random() - 0.5) * 3.5;
-      const velY = -8.5;
-      const velZ = (Math.random() - 0.5) * 3.5;
+      const velX = (Math.random() - 0.5) * 4.2;
+      const velY = -7.5;
+      const velZ = (Math.random() - 0.5) * 4.2;
       api.velocity.set(velX, velY, velZ);
 
       // Apply a strong off-center impulse for torque (spin)
       const impulse: [number, number, number] = [
-        (Math.random() - 0.5) * 12,
-        6,
-        (Math.random() - 0.5) * 12
+        (Math.random() - 0.5) * 14,
+        7,
+        (Math.random() - 0.5) * 14
       ];
       // Point of offset is critical for torque. Max offset is DIE_SIZE/2 (0.35)
       const point: [number, number, number] = [
@@ -171,16 +217,26 @@ const Die = ({ position, rolling, value }: { position: [number, number, number],
     }
   }, [rolling, api, position]);
 
-  useEffect(() => {
-    if (rolling || value <= 0) return;
-    const rotation = VALUE_ROTATIONS[value] ?? [0, 0, 0];
-    api.velocity.set(0, 0, 0);
-    api.angularVelocity.set(0, 0, 0);
-    api.rotation.set(rotation[0], rotation[1], rotation[2]);
-  }, [rolling, value, api]);
+  useFrame((_, delta) => {
+    if (!rolling || settledRef.current || !groupRef.current) return;
+    const speed = velocityRef.current.length();
+    const spin = angularVelocityRef.current.length();
+    if (speed < 0.12 && spin < 0.5) {
+      settleTimerRef.current += delta;
+      if (settleTimerRef.current > 0.35 && !settledRef.current) {
+        settledRef.current = true;
+        onSettled?.(getTopFaceValue(groupRef.current.quaternion));
+      }
+    } else {
+      settleTimerRef.current = 0;
+    }
+  });
 
   return (
-    <group ref={ref as any}>
+    <group ref={(node) => {
+      (ref as any).current = node;
+      groupRef.current = node;
+    }}>
       <DiceErrorBoundary fallback={<DieFallback />}>
         <Suspense fallback={<DieFallback />}>
           <DieModel />
@@ -204,16 +260,52 @@ const Ground = () => {
   );
 };
 
-const InvisibleWalls = () => {
-  // Balanced walls to keep dice centered in the hub
-  usePlane(() => ({ position: [0, 0, -ROLL_AREA_RADIUS], rotation: [0, 0, 0] }));
-  usePlane(() => ({ position: [0, 0, ROLL_AREA_RADIUS], rotation: [0, Math.PI, 0] }));
-  usePlane(() => ({ position: [-ROLL_AREA_RADIUS, 0, 0], rotation: [0, Math.PI / 2, 0] }));
-  usePlane(() => ({ position: [ROLL_AREA_RADIUS, 0, 0], rotation: [0, -Math.PI / 2, 0] }));
-  return null;
+const Wall = ({ position, args }: { position: [number, number, number]; args: [number, number, number] }) => {
+  const [ref] = useBox(() => ({
+    args,
+    position,
+    type: 'Static'
+  }));
+  return (
+    <mesh ref={ref as any} castShadow receiveShadow>
+      <boxGeometry args={args} />
+      <meshStandardMaterial color="#1f2937" transparent opacity={0.55} metalness={0.2} roughness={0.6} />
+    </mesh>
+  );
 };
 
-export const Dice: FC<DiceProps> = ({ value, rolling }) => {
+const InvisibleWalls = () => {
+  return (
+    <group>
+      <Wall position={[0, WALL_HEIGHT / 2, -ROLL_AREA_HALF]} args={[ROLL_AREA_HALF * 2 + WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS]} />
+      <Wall position={[0, WALL_HEIGHT / 2, ROLL_AREA_HALF]} args={[ROLL_AREA_HALF * 2 + WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS]} />
+      <Wall position={[-ROLL_AREA_HALF, WALL_HEIGHT / 2, 0]} args={[WALL_THICKNESS, WALL_HEIGHT, ROLL_AREA_HALF * 2 + WALL_THICKNESS]} />
+      <Wall position={[ROLL_AREA_HALF, WALL_HEIGHT / 2, 0]} args={[WALL_THICKNESS, WALL_HEIGHT, ROLL_AREA_HALF * 2 + WALL_THICKNESS]} />
+    </group>
+  );
+};
+
+export const Dice: FC<DiceProps> = ({ value, rolling, onRollComplete }) => {
+  const resultRef = useRef<{ first: number | null; second: number | null }>({ first: null, second: null });
+  const rollLockRef = useRef(false);
+
+  useEffect(() => {
+    if (rolling) {
+      resultRef.current = { first: null, second: null };
+      rollLockRef.current = false;
+    }
+  }, [rolling]);
+
+  const handleDieSettled = useCallback((index: number, dieValue: number) => {
+    if (rollLockRef.current) return;
+    if (index === 0) resultRef.current.first = dieValue;
+    if (index === 1) resultRef.current.second = dieValue;
+    if (resultRef.current.first && resultRef.current.second) {
+      rollLockRef.current = true;
+      onRollComplete?.([resultRef.current.first, resultRef.current.second]);
+    }
+  }, [onRollComplete]);
+
   return (
     <div className="dice-canvas-wrapper" style={{ width: '100%', height: '240px', position: 'relative' }}>
       <Canvas shadows>
@@ -228,9 +320,9 @@ export const Dice: FC<DiceProps> = ({ value, rolling }) => {
         />
         <pointLight position={[-3, 4, 3]} intensity={1.2} color="#6366f1" />
 
-        <Physics gravity={[0, -40, 0]} defaultContactMaterial={{ restitution: 0.05, friction: 0.6 }}>
-          <Die position={[-1.2, 5, 0]} rolling={rolling} value={value[0]} />
-          <Die position={[1.2, 5, 0]} rolling={rolling} value={value[1]} />
+        <Physics gravity={[0, -32, 0]} defaultContactMaterial={{ restitution: 0.28, friction: 0.45 }}>
+          <Die position={[-1.2, 5, 0]} rolling={rolling} onSettled={(dieValue) => handleDieSettled(0, dieValue)} />
+          <Die position={[1.2, 5, 0]} rolling={rolling} onSettled={(dieValue) => handleDieSettled(1, dieValue)} />
           <Ground />
           <InvisibleWalls />
         </Physics>

@@ -10,7 +10,7 @@ import { Chat } from './components/Chat';
 
 import { GameState, ChatMessage, UserProfile, RoomInfo, Player, CellType } from './types';
 import { INITIAL_BOARD, INITIAL_MONEY, SALARY, PLAYER_COLORS } from './constants';
-import { AI_UX_DELAYS, ANIMATION_DELAYS } from './constants/aiDelays';
+import { AI_UX_DELAYS } from './constants/aiDelays';
 import {
   broadcastGameState,
   broadcastGameChat,
@@ -370,38 +370,6 @@ export default function App() {
     }
   }, [gameState.modal, gameState.pendingArrivalId, gameLogic]);
 
-  // 주사위 애니메이션 완료 후 이동 처리 (상태 기반)
-  useEffect(() => {
-    if (!gameState.isRolling) return;
-
-    // 주사위 애니메이션 시간 (UX용 지연)
-    const timer = setTimeout(() => {
-      // 최신 상태를 ref에서 가져옴 (의존성 문제 방지)
-      const currentState = gameStateRef.current;
-      const currentPlayer = currentState.players[currentState.currentPlayerIndex];
-      const moveSteps = currentState.pendingMoveSteps;
-      const willMove = moveSteps > 0 && !!currentPlayer;
-
-      // [CRITICAL] isRolling: false와 isMoving: true를 단일 배치로 처리하여 
-      // AI의 useEffect가 끼어들 간극(gap)을 원천 차단
-      setGameStateInternal(prev => ({
-        ...prev,
-        isRolling: false,
-        isMoving: willMove, // 바로 이동 상태로 전환
-        pendingMoveSteps: 0,
-        waitingForNextTurn: moveSteps === 0
-      }));
-
-      // 이동할 칸이 있으면 이동 시작
-      if (willMove) {
-        // movePlayerStepByStep 내부에서 중복 상태 업데이트를 하지 않도록 플래그 전달
-        gameLogic.movePlayerStepByStep(currentPlayer.id, moveSteps, true);
-      }
-    }, ANIMATION_DELAYS.DICE_ROLL);
-
-    return () => clearTimeout(timer);
-  }, [gameState.isRolling, gameLogic.movePlayerStepByStep]);
-
   // AI Effects (Only Host runs AI)
   useEffect(() => {
     if (!isHost) return;
@@ -582,6 +550,7 @@ export default function App() {
           <GameBoard
             gameState={gameState}
             onCellClick={gameLogic.handleCellClick}
+            onDiceRollComplete={isHost ? gameLogic.handleDiceResult : undefined}
           />
 
           <GameControls
