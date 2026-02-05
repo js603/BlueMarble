@@ -118,13 +118,13 @@ const VALUE_ROTATIONS: Record<number, [number, number, number]> = {
 
 const Die = ({ position, rolling, value }: { position: [number, number, number], rolling: boolean, value: number }) => {
   const [ref, api] = useBox(() => ({
-    mass: 10,
+    mass: 25,
     position,
     args: [DIE_SIZE, DIE_SIZE, DIE_SIZE],
-    friction: 0.35,
-    restitution: 0.2,
-    linearDamping: 0.15,
-    angularDamping: 0.12,
+    friction: 0.6,
+    restitution: 0.05,
+    linearDamping: 0.25,
+    angularDamping: 0.2,
     allowSleep: true,
     sleepSpeedLimit: 0.15,
     sleepTimeLimit: 0.6,
@@ -136,25 +136,26 @@ const Die = ({ position, rolling, value }: { position: [number, number, number],
     if (rolling) {
       rollApplied.current = false;
       api.wakeUp();
-      api.linearDamping.set(0.12);
-      api.angularDamping.set(0.1);
+      api.linearDamping.set(0.18);
+      api.angularDamping.set(0.14);
 
-      // Random starting spread
-      const startX = position[0] + (Math.random() - 0.5) * 0.8;
-      const startZ = (Math.random() - 0.5) * 0.8;
-      api.position.set(startX, 6, startZ);
+      // Reset to a fixed start position every roll
+      api.position.set(position[0], 6, position[2]);
+      api.rotation.set(0, 0, 0);
+      api.velocity.set(0, 0, 0);
+      api.angularVelocity.set(0, 0, 0);
 
-      // Increased initial horizontal speed
-      const velX = (Math.random() - 0.5) * 5;
-      const velY = -10;
-      const velZ = (Math.random() - 0.5) * 5;
+      // Controlled initial roll force
+      const velX = (Math.random() - 0.5) * 3.5;
+      const velY = -8.5;
+      const velZ = (Math.random() - 0.5) * 3.5;
       api.velocity.set(velX, velY, velZ);
 
       // Apply a strong off-center impulse for torque (spin)
       const impulse: [number, number, number] = [
-        (Math.random() - 0.5) * 18,
-        8,
-        (Math.random() - 0.5) * 18
+        (Math.random() - 0.5) * 12,
+        6,
+        (Math.random() - 0.5) * 12
       ];
       // Point of offset is critical for torque. Max offset is DIE_SIZE/2 (0.35)
       const point: [number, number, number] = [
@@ -164,8 +165,8 @@ const Die = ({ position, rolling, value }: { position: [number, number, number],
       ];
       api.applyImpulse(impulse, point);
     } else if (!rolling && !rollApplied.current) {
-      api.linearDamping.set(0.4);
-      api.angularDamping.set(0.35);
+      api.linearDamping.set(0.5);
+      api.angularDamping.set(0.45);
       rollApplied.current = true;
     }
   }, [rolling, api, position]);
@@ -227,7 +228,7 @@ export const Dice: FC<DiceProps> = ({ value, rolling }) => {
         />
         <pointLight position={[-3, 4, 3]} intensity={1.2} color="#6366f1" />
 
-        <Physics gravity={[0, -40, 0]} defaultContactMaterial={{ restitution: 0.2, friction: 0.35 }}>
+        <Physics gravity={[0, -40, 0]} defaultContactMaterial={{ restitution: 0.05, friction: 0.6 }}>
           <Die position={[-1.2, 5, 0]} rolling={rolling} value={value[0]} />
           <Die position={[1.2, 5, 0]} rolling={rolling} value={value[1]} />
           <Ground />
