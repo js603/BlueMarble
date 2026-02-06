@@ -89,6 +89,7 @@ export default function App() {
     setShowLobby,
     playerActionRef
   });
+  const allowLocalAi = isHost || connectedPeers.length === 0;
 
   // 4. State Sync & Broadcast Wrapper
   const updateStateAndBroadcast = useCallback((action: GameState | ((prev: GameState) => GameState)) => {
@@ -100,6 +101,7 @@ export default function App() {
     }
 
     setGameStateInternal(newState);
+    gameStateRef.current = newState;
 
     if (isHost && newState.isMultiplayer) {
       const shouldBroadcast =
@@ -372,7 +374,7 @@ export default function App() {
 
   // AI Effects (Only Host runs AI)
   useEffect(() => {
-    if (!isHost) return;
+    if (!allowLocalAi) return;
 
     // AI 차례인지 확인 (트리거 상태 체크)
     const s = gameState;
@@ -381,21 +383,17 @@ export default function App() {
 
     if (s.gameStatus === 'PLAYING' && !s.isRolling && !s.isMoving && !s.waitingForNextTurn && !s.modal && !s.isSelectingMoveTarget && !s.pendingArrivalId && s.outstandingDebt === 0) {
       console.log('[AI] Ready to roll dice for:', p.name);
-      const timer = setTimeout(() => {
-        // 실행 시점에 다시 한 번 최신 상태 확인
-        const currentS = gameStateRef.current;
-        const currentP = currentS.players[currentS.currentPlayerIndex];
-        if (currentP?.isComputer && !currentS.isRolling && !currentS.isMoving && !currentS.waitingForNextTurn) {
-          console.log('[AI] Rolling dice for:', currentP.name);
-          gameLogic.handleRollDice();
-        }
-      }, AI_UX_DELAYS.BEFORE_ROLL_DICE);
-      return () => clearTimeout(timer);
+      const currentS = gameStateRef.current;
+      const currentP = currentS.players[currentS.currentPlayerIndex];
+      if (currentP?.isComputer && !currentS.isRolling && !currentS.isMoving && !currentS.waitingForNextTurn) {
+        console.log('[AI] Rolling dice for:', currentP.name);
+        gameLogic.handleRollDice();
+      }
     }
-  }, [gameState.currentPlayerIndex, gameState.isRolling, gameState.isMoving, gameState.waitingForNextTurn, gameState.modal, gameState.gameStatus, gameState.isSelectingMoveTarget, gameState.pendingArrivalId, gameState.outstandingDebt, isHost, gameLogic.handleRollDice]);
+  }, [gameState.currentPlayerIndex, gameState.isRolling, gameState.isMoving, gameState.waitingForNextTurn, gameState.modal, gameState.gameStatus, gameState.isSelectingMoveTarget, gameState.pendingArrivalId, gameState.outstandingDebt, allowLocalAi, gameLogic.handleRollDice]);
 
   useEffect(() => {
-    if (!isHost || !gameState.modal?.isComputerAction) return;
+    if (!allowLocalAi || !gameState.modal?.isComputerAction) return;
 
     console.log('[AI] Modal action for computer, type:', gameState.modal.type);
     const timer = setTimeout(() => {
@@ -414,10 +412,10 @@ export default function App() {
       gameLogic.handleModalActionWithLogic(decision);
     }, AI_UX_DELAYS.BEFORE_MODAL_DECISION);
     return () => clearTimeout(timer);
-  }, [gameState.modal, gameState.currentPlayerIndex, isHost, gameLogic.handleModalActionWithLogic]);
+  }, [gameState.modal, gameState.currentPlayerIndex, allowLocalAi, gameLogic.handleModalActionWithLogic]);
 
   useEffect(() => {
-    if (!isHost || !gameState.isSelectingMoveTarget) return;
+    if (!allowLocalAi || !gameState.isSelectingMoveTarget) return;
 
     const s = gameState;
     const p = s.players[s.currentPlayerIndex];
@@ -433,10 +431,10 @@ export default function App() {
       gameLogic.handleTeleport(target.id);
     }, AI_UX_DELAYS.BEFORE_TELEPORT);
     return () => clearTimeout(timer);
-  }, [gameState.isSelectingMoveTarget, gameState.currentPlayerIndex, isHost, gameLogic.handleTeleport]);
+  }, [gameState.isSelectingMoveTarget, gameState.currentPlayerIndex, allowLocalAi, gameLogic.handleTeleport]);
 
   useEffect(() => {
-    if (!isHost || !gameState.waitingForNextTurn) return;
+    if (!allowLocalAi || !gameState.waitingForNextTurn) return;
 
     const s = gameState;
     const p = s.players[s.currentPlayerIndex];
@@ -451,13 +449,13 @@ export default function App() {
           console.log('[AI] Ending turn for:', p.name);
           gameLogic.nextTurn();
         }
-      }, AI_UX_DELAYS.BEFORE_NEXT_TURN);
+      }, 800); // Shorter delay for AI turn end
       return () => clearTimeout(timer);
     }
-  }, [gameState.waitingForNextTurn, gameState.currentPlayerIndex, gameState.modal, gameState.isSelectingMoveTarget, gameState.pendingArrivalId, gameState.outstandingDebt, isHost, gameLogic.nextTurn]);
+  }, [gameState.waitingForNextTurn, gameState.currentPlayerIndex, gameState.modal, gameState.isSelectingMoveTarget, gameState.pendingArrivalId, gameState.outstandingDebt, allowLocalAi, gameLogic.nextTurn]);
 
   useEffect(() => {
-    if (!isHost || gameState.outstandingDebt <= 0 || gameState.modal) return;
+    if (!allowLocalAi || gameState.outstandingDebt <= 0 || gameState.modal) return;
 
     const s = gameState;
     const p = s.players[s.currentPlayerIndex];
@@ -484,7 +482,7 @@ export default function App() {
       }
     }, 1500);
     return () => clearTimeout(timer);
-  }, [gameState.outstandingDebt, gameState.modal, gameState.currentPlayerIndex, isHost, gameLogic.sellLand, gameLogic.calculateSellPrice]);
+  }, [gameState.outstandingDebt, gameState.modal, gameState.currentPlayerIndex, allowLocalAi, gameLogic.sellLand, gameLogic.calculateSellPrice]);
 
   // 12. Render
   return (
@@ -551,6 +549,7 @@ export default function App() {
             gameState={gameState}
             onCellClick={gameLogic.handleCellClick}
             onDiceRollComplete={isHost ? gameLogic.handleDiceResult : undefined}
+            diceGauge={100}
           />
 
           <GameControls

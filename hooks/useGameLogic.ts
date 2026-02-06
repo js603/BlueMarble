@@ -360,6 +360,7 @@ export function useGameLogic({
     }, [gameStateRef, setGameState, addChatMessage, handleArrival]);
 
     const movePlayerStepByStep = useCallback(async (playerId: number, steps: number, alreadyMoving?: boolean) => {
+        console.log(`[Move] Starting move for player ${playerId}: ${steps} steps`);
         if (!alreadyMoving) {
             setGameState(prev => ({ ...prev, isMoving: true }));
         }
@@ -368,50 +369,28 @@ export function useGameLogic({
             await new Promise(resolve => setTimeout(resolve, 300));
             setGameState(prev => {
                 const pIdx = prev.players.findIndex(p => p.id === playerId);
-                if (pIdx === -1) return prev;
+                if (pIdx === -1) {
+                    console.error(`[Move] Player ${playerId} not found during step ${i + 1}`);
+                    return prev;
+                }
                 const player = prev.players[pIdx];
                 let nextPos = player.position + 1;
                 let money = player.money;
                 if (nextPos >= prev.board.length) {
                     nextPos = 0;
                     money += SALARY;
+                    addChatMessage('SYSTEM', '월급', `${player.name}님 월급 ₩${SALARY.toLocaleString()} 획득!`);
                 }
+                console.log(`[Move] Player ${player.name} moved to ${nextPos} (Step ${i + 1}/${steps})`);
                 const newPlayers = [...prev.players];
                 newPlayers[pIdx] = { ...player, position: nextPos, money };
                 return { ...prev, players: newPlayers };
             });
         }
 
+        console.log(`[Move] Finished moving ${playerId}, calling handleArrival`);
         setTimeout(() => { handleArrival(playerId); }, 200);
-    }, [setGameState, handleArrival]);
-
-    const handleRollDice = useCallback(() => {
-        const currentState = gameStateRef.current;
-        if (currentState.isRolling || currentState.isMoving || currentState.modal || currentState.waitingForNextTurn || currentState.isSelectingMoveTarget || currentState.pendingArrivalId || currentState.outstandingDebt > 0 || currentState.gameStatus !== 'PLAYING') return;
-
-        const p = currentState.players[currentState.currentPlayerIndex];
-        if (!p) return;
-
-        if (!isHost && currentState.isMultiplayer) {
-            const myId = currentState.myPlayerId;
-            if (myId && p.id === myId) {
-                sendGameMessage({
-                    type: 'PLAYER_ACTION',
-                    payload: { action: 'ROLL_DICE', playerId: myId }
-                });
-            }
-            return;
-        }
-
-        setGameState(prev => ({
-            ...prev,
-            isRolling: true,
-            isMoving: false,
-            diceValue: [0, 0],
-            pendingMoveSteps: 0,
-            waitingForNextTurn: false
-        }));
-    }, [gameStateRef, setGameState, isHost]);
+    }, [setGameState, handleArrival, addChatMessage]);
 
     const handleDiceResult = useCallback((d1: number, d2: number) => {
         const currentState = gameStateRef.current;
@@ -498,20 +477,67 @@ export function useGameLogic({
                 consecutiveDoubles: newDoubles,
                 isRolling: false,
                 isMoving: moveSteps > 0,
-                pendingMoveSteps: 0,
+                pendingMoveSteps: moveSteps,
                 waitingForNextTurn: moveSteps === 0
             };
         });
 
         if (moveSteps > 0) {
-            setTimeout(() => {
-                const currentPlayer = gameStateRef.current.players[gameStateRef.current.currentPlayerIndex];
-                if (currentPlayer) {
-                    movePlayerStepByStep(currentPlayer.id, moveSteps, true);
-                }
-            }, 200);
+            setTimeout(() => { movePlayerStepByStep(p.id, moveSteps); }, 300);
         }
     }, [gameStateRef, setGameState, addChatMessage, movePlayerStepByStep]);
+
+    const handleRollDice = useCallback(() => {
+        const currentState = gameStateRef.current;
+        if (currentState.isRolling || currentState.isMoving || currentState.modal || currentState.waitingForNextTurn || currentState.isSelectingMoveTarget || currentState.pendingArrivalId || currentState.outstandingDebt > 0 || currentState.gameStatus !== 'PLAYING') {
+            console.warn('[Dice] Cannot roll now, state guards active:', {
+                isRolling: currentState.isRolling,
+                isMoving: currentState.isMoving,
+                modal: !!currentState.modal,
+                waitingForNextTurn: currentState.waitingForNextTurn,
+                isSelectingMoveTarget: currentState.isSelectingMoveTarget,
+                pendingArrivalId: currentState.pendingArrivalId,
+                outstandingDebt: currentState.outstandingDebt,
+                gameStatus: currentState.gameStatus
+            });
+            return;
+        }
+
+        const p = currentState.players[currentState.currentPlayerIndex];
+        if (!p) return;
+
+        if (!isHost && currentState.isMultiplayer && !p.isComputer) {
+            const myId = currentState.myPlayerId;
+            if (myId && p.id === myId) {
+                sendGameMessage({
+                    type: 'PLAYER_ACTION',
+                    payload: { action: 'ROLL_DICE', playerId: myId }
+                });
+            }
+            return;
+        }
+
+        setGameState(prev => ({
+            ...prev,
+            isRolling: true,
+            rollId: (prev.rollId || 0) + 1,
+            isMoving: false,
+            diceValue: [0, 0],
+            pendingMoveSteps: 0,
+            waitingForNextTurn: false
+        }));
+
+        // Safety Guard: Force clear isRolling if physics fails to settle within 9 seconds
+        setTimeout(() => {
+            const current = gameStateRef.current;
+            if (current.isRolling && current.gameStatus === 'PLAYING') {
+                console.error('[Dice] Force clearing stuck isRolling state!');
+                const fallbackD1 = Math.floor(Math.random() * 6) + 1;
+                const fallbackD2 = Math.floor(Math.random() * 6) + 1;
+                handleDiceResult(fallbackD1, fallbackD2);
+            }
+        }, 9000);
+    }, [gameStateRef, setGameState, isHost, handleDiceResult]);
 
     const nextTurn = useCallback(() => {
         const s = gameStateRef.current;
@@ -619,6 +645,7 @@ export function useGameLogic({
         const currentPlayer = s.players[s.currentPlayerIndex];
 
         if (s.isSelectingMoveTarget && !currentPlayer.isComputer && s.outstandingDebt === 0) {
+            console.log(`[Teleport] Moving player ${currentPlayer.name} to ${index}`);
             handleTeleport(index);
             return;
         }

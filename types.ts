@@ -69,6 +69,7 @@ export interface GameState {
   roomId?: string;
   myPlayerId?: number;
   isConnected?: boolean;
+  rollId?: number; // Unique ID for each dice roll to force remount
 }
 
 export interface ChatMessage {

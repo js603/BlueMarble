@@ -7,7 +7,8 @@ import { BuildingIcon } from './BuildingIcon';
 interface GameBoardProps {
     gameState: GameState;
     onCellClick: (index: number) => void;
-    onDiceRollComplete?: (values: [number, number]) => void;
+    onDiceRollComplete?: (d1: number, d2: number) => void;
+    diceGauge?: number;
 }
 
 const renderSpecialCell = (cell: BoardCell) => {
@@ -60,7 +61,7 @@ const getGridArea = (idx: number): string => {
     return '';
 };
 
-export function GameBoard({ gameState, onCellClick, onDiceRollComplete }: GameBoardProps) {
+export function GameBoard({ gameState, onCellClick, onDiceRollComplete, diceGauge = 0 }: GameBoardProps) {
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
     const myPlayerId = gameState.myPlayerId;
 
@@ -71,9 +72,9 @@ export function GameBoard({ gameState, onCellClick, onDiceRollComplete }: GameBo
                 {/* Center Hub: Dice & Info */}
                 <div className="col-start-2 col-end-6 row-start-2 row-end-6 bg-slate-950/50 rounded-xl relative overflow-hidden flex flex-col items-center justify-center p-4 border border-white/5">
 
-                    {/* Dynamic Island Notification */}
+                    {/* Turn Status */}
                     {gameState.gameStatus === 'PLAYING' && (
-                        <div className="absolute top-4 w-full px-4 z-20">
+                        <div className="w-full px-4 mb-3 z-20">
                             {gameState.waitingForNextTurn ? (
                                 <div className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-4 py-2 rounded-full text-center text-xs font-bold animate-pulse">
                                     다음 턴 준비 중...
@@ -91,7 +92,13 @@ export function GameBoard({ gameState, onCellClick, onDiceRollComplete }: GameBo
 
                     {/* Dice Display */}
                     <div className={`transform transition-all duration-500 ${gameState.isRolling ? 'scale-110' : 'scale-100'}`}>
-                        <Dice value={gameState.diceValue} rolling={gameState.isRolling} onRollComplete={onDiceRollComplete} />
+                        <Dice
+                            value={gameState.diceValue}
+                            rolling={gameState.isRolling}
+                            onRollComplete={onDiceRollComplete}
+                            rollId={gameState.rollId}
+                            gauge={diceGauge}
+                        />
                     </div>
 
                     {/* Result Text */}
